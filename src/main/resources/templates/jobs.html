@@ -6,6 +6,10 @@
   <title>FSM Jobs</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    .signature-canvas { width: 100%; height: 180px; border: 1px dashed #6c757d; border-radius: 8px; touch-action: none; background: #fff; }
+    .job-image { width: 100%; height: 150px; object-fit: cover; background: #f8f9fa; border-radius: 8px; }
+  </style>
 </head>
 <body class="bg-light">
 <div class="container py-3">
@@ -90,7 +94,8 @@
 const user = JSON.parse(localStorage.getItem('user')); if (!user || !user.token) window.location.href='/login';
 const isAdmin = user.roles.includes('ROLE_ADMIN');
 const authHeaders = { Authorization:'Bearer '+user.token };
-const state = { jobs:[], selected:null, parts:[] };
+const state = { jobs:[], selected:null, parts:[], previewUrls:[] };
+const signatureState = { drawing:false, hasStroke:false };
 document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(',');
 if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); }
 document.getElementById('jobForm').addEventListener('submit', submitJob);
@@ -98,7 +103,9 @@ document.getElementById('partForm').addEventListener('submit', submitPart);
 
 function showMessage(m,t){ const b=document.getElementById('messageBox'); b.textContent=m; b.className='alert alert-'+t; }
 function resolveError(e){ return e.response?.data?.message || e.message || 'Error'; }
-function logout(){ localStorage.removeItem('user'); window.location.href='/login'; }
+function logout(){ cleanupPreviewUrls(); localStorage.removeItem('user'); window.location.href='/login'; }
+function formatDateTime(v){ return v ? new Date(v).toLocaleString() : ''; }
+function cleanupPreviewUrls(){ state.previewUrls.forEach(url=>URL.revokeObjectURL(url)); state.previewUrls=[]; }
 
 async function init(){ await loadParts(); await loadJobs(); }
 
@@ -110,7 +117,13 @@ async function loadJobs(){
     const p=document.getElementById('filterPriority').value; if(p) params.priority=p;
     const res=await axios.get('/api/jobs',{headers:authHeaders,params});
     state.jobs=res.data.content||[]; document.getElementById('jobCount').textContent=state.jobs.length;
-    renderJobs(); if(state.jobs.length && !state.selected) await selectJob(state.jobs[0].id);
+    renderJobs();
+    if(state.selected){
+      const refreshed=state.jobs.find(x=>x.id===state.selected.id);
+      if(refreshed){ await selectJob(refreshed.id); return; }
+    }
+    if(state.jobs.length && !state.selected) await selectJob(state.jobs[0].id);
+    if(!state.jobs.length){ state.selected=null; renderSelected(); }
   }catch(e){ showMessage(resolveError(e),'danger'); }
 }
 
@@ -119,9 +132,10 @@ function renderJobs(){
   if(!state.jobs.length){ box.innerHTML='<div class="text-muted">No jobs</div>'; return; }
   box.innerHTML=state.jobs.map(j=>{
     const chk=(j.checklist||[]).filter(x=>x.completed).length+'/'+(j.checklist||[]).length;
+    const imageCount=(j.images||[]).length;
     return `<div class="border rounded p-2 mb-2">
       <div><strong>${j.jobCode}</strong> - ${j.title}</div>
-      <div class="small text-muted">${j.customerName} | ${j.status} | checklist ${chk}</div>
+      <div class="small text-muted">${j.customerName} | ${j.status} | checklist ${chk} | images ${imageCount}</div>
       <div class="mt-2">
         <button class="btn btn-sm btn-outline-dark" onclick="selectJob(${j.id})">Open</button>
         ${isAdmin?`<button class="btn btn-sm btn-outline-primary" onclick="editJob(${j.id})">Edit</button>
@@ -131,24 +145,178 @@ function renderJobs(){
   }).join('');
 }
 
-async function selectJob(id){ try{ const r=await axios.get('/api/jobs/'+id,{headers:authHeaders}); state.selected=r.data; renderSelected(); }catch(e){ showMessage(resolveError(e),'danger'); }}
+async function selectJob(id){
+  try{
+    const r=await axios.get('/api/jobs/'+id,{headers:authHeaders});
+    state.selected=r.data;
+    renderSelected();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
 
 function renderSelected(){
-  const b=document.getElementById('selectedJobBox'); const j=state.selected; if(!j){ b.innerHTML='<div class="text-muted">Select job</div>'; return; }
+  cleanupPreviewUrls();
+  const b=document.getElementById('selectedJobBox'); const j=state.selected;
+  if(!j){ b.innerHTML='<div class="text-muted">Select job</div>'; return; }
   const partOptions = state.parts.filter(x=>x.active).map(x=>`<option value="${x.id}">${x.partCode} (${x.stockQuantity})</option>`).join('');
   const checklist=(j.checklist||[]).map(i=>`<div class="border rounded p-2 mb-2"><div><strong>${i.itemName}</strong> - ${i.completed?'DONE':'TODO'}</div>
       <div class="small text-muted">${i.note||''}</div><button class="btn btn-sm ${i.completed?'btn-outline-warning':'btn-outline-success'}" onclick="toggleChecklist(${j.id},${i.id},${!i.completed})">${i.completed?'Undo':'Done'}</button></div>`).join('') || '<div class="text-muted">No checklist</div>';
   const parts=(j.usedParts||[]).map(u=>`<li>${u.partCode} - ${u.quantityUsed} ${u.unit} (${u.usedBy||'system'})</li>`).join('') || '<li>No part usage</li>';
   const timeline=(j.timeline||[]).map(t=>`<li>${t.activityType}: ${t.message}</li>`).join('') || '<li>No timeline</li>';
-  b.innerHTML=`<div><strong>${j.jobCode}</strong> ${j.title}</div><div class="small text-muted mb-2">${j.status} | ${j.assignedUsername||'Unassigned'}</div>
+  const images=(j.images||[]).map(img=>`<div class="col-6">
+      <div class="border rounded p-2 h-100">
+        <img class="job-image mb-2" alt="${escapeHtml(img.fileName)}" data-protected-src="${img.imageUrl}"/>
+        <div class="small fw-semibold text-break">${escapeHtml(img.fileName)}</div>
+        <div class="small text-muted">${escapeHtml(img.uploadedBy||'system')} ${img.uploadedAt?'- '+formatDateTime(img.uploadedAt):''}</div>
+      </div>
+    </div>`).join('') || '<div class="text-muted">No uploaded images</div>';
+  const signaturePreview=j.signatureImageUrl
+    ? `<img class="img-fluid border rounded p-2 bg-white" alt="signature" data-protected-src="${j.signatureImageUrl}"/>
+       <div class="small text-muted mt-1">Signed by ${escapeHtml(j.signatureSignedBy||'')} ${j.signatureSignedAt?'at '+formatDateTime(j.signatureSignedAt):''}</div>`
+    : '<div class="text-muted">No signature</div>';
+
+  b.innerHTML=`<div><strong>${j.jobCode}</strong> ${j.title}</div>
+    <div class="small text-muted mb-2">${j.status} | ${j.assignedUsername||'Unassigned'}</div>
+    <div class="small mb-3">${escapeHtml(j.customerName)}<br/>${escapeHtml(j.serviceAddress)}<br/>${escapeHtml(j.description||'')}</div>
+
+    <div class="d-flex gap-2 flex-wrap mb-3">
+      <button class="btn btn-sm btn-outline-danger" type="button" onclick="downloadReport(${j.id})">Export PDF</button>
+    </div>
+
     <h6>Checklist</h6>
     ${isAdmin?`<form onsubmit="addChecklist(event,${j.id})" class="mb-2"><input id="checkName" class="form-control form-control-sm mb-1" placeholder="New item" required/><input id="checkNote" class="form-control form-control-sm mb-1" placeholder="Note"/><button class="btn btn-sm btn-primary">Add</button></form>`:''}
     ${checklist}
+
     <h6 class="mt-3">Use Part</h6>
-    <form onsubmit="usePart(event,${j.id})" class="mb-2"><select id="usePartId" class="form-select form-select-sm mb-1" required><option value="">Select part</option>${partOptions}</select>
-    <input id="useQty" type="number" min="1" class="form-control form-control-sm mb-1" placeholder="Qty" required/><input id="useNote" class="form-control form-control-sm mb-1" placeholder="Note"/><button class="btn btn-sm btn-dark">Record</button></form>
+    <form onsubmit="usePart(event,${j.id})" class="mb-2">
+      <select id="usePartId" class="form-select form-select-sm mb-1" required><option value="">Select part</option>${partOptions}</select>
+      <input id="useQty" type="number" min="1" class="form-control form-control-sm mb-1" placeholder="Qty" required/>
+      <input id="useNote" class="form-control form-control-sm mb-1" placeholder="Note"/>
+      <button class="btn btn-sm btn-dark">Record</button>
+    </form>
     <ul>${parts}</ul>
-    <h6>Timeline</h6><ul>${timeline}</ul>`;
+
+    <h6 class="mt-3">Upload Images</h6>
+    <form onsubmit="uploadImages(event,${j.id})" class="mb-2">
+      <input id="jobImagesInput" type="file" class="form-control form-control-sm mb-2" accept="image/*" multiple required/>
+      <button class="btn btn-sm btn-primary">Upload Images</button>
+    </form>
+    <div class="row g-2">${images}</div>
+
+    <h6 class="mt-3">Electronic Signature</h6>
+    <canvas id="signatureCanvas" class="signature-canvas mb-2"></canvas>
+    <div class="d-flex gap-2 mb-2">
+      <button class="btn btn-sm btn-outline-secondary" type="button" onclick="clearSignatureCanvas()">Clear</button>
+      <button class="btn btn-sm btn-success" type="button" onclick="saveSignature(${j.id})">Save Signature</button>
+    </div>
+    <div id="signaturePreviewBox">${signaturePreview}</div>
+
+    <h6 class="mt-3">Timeline</h6>
+    <ul>${timeline}</ul>`;
+  setupSignatureCanvas();
+  hydrateProtectedImages();
+}
+
+function escapeHtml(value){
+  return String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
+}
+
+async function hydrateProtectedImages(){
+  const nodes=[...document.querySelectorAll('[data-protected-src]')];
+  for(const node of nodes){
+    try{
+      const res=await axios.get(node.dataset.protectedSrc,{headers:authHeaders,responseType:'blob'});
+      const url=URL.createObjectURL(res.data);
+      state.previewUrls.push(url);
+      node.src=url;
+    }catch(e){
+      node.replaceWith(document.createTextNode('Cannot load image'));
+    }
+  }
+}
+
+function setupSignatureCanvas(){
+  const canvas=document.getElementById('signatureCanvas');
+  if(!canvas) return;
+  const ratio=window.devicePixelRatio || 1;
+  const rect=canvas.getBoundingClientRect();
+  canvas.width=Math.max(rect.width*ratio, 320);
+  canvas.height=Math.max(rect.height*ratio, 180);
+  const ctx=canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth=2;
+  ctx.lineCap='round';
+  ctx.strokeStyle='#212529';
+  signatureState.drawing=false;
+  signatureState.hasStroke=false;
+  canvas.onpointerdown=event=>{
+    signatureState.drawing=true;
+    signatureState.hasStroke=true;
+    const point=getCanvasPoint(canvas,event);
+    ctx.beginPath();
+    ctx.moveTo(point.x,point.y);
+  };
+  canvas.onpointermove=event=>{
+    if(!signatureState.drawing) return;
+    const point=getCanvasPoint(canvas,event);
+    ctx.lineTo(point.x,point.y);
+    ctx.stroke();
+  };
+  const stop=()=>{ signatureState.drawing=false; };
+  canvas.onpointerup=stop;
+  canvas.onpointerleave=stop;
+}
+
+function getCanvasPoint(canvas,event){
+  const rect=canvas.getBoundingClientRect();
+  return { x:event.clientX-rect.left, y:event.clientY-rect.top };
+}
+
+function clearSignatureCanvas(){
+  const canvas=document.getElementById('signatureCanvas');
+  if(!canvas) return;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  signatureState.hasStroke=false;
+}
+
+async function saveSignature(jobId){
+  const canvas=document.getElementById('signatureCanvas');
+  if(!canvas || !signatureState.hasStroke){ showMessage('Please provide a signature first','warning'); return; }
+  try{
+    await axios.post('/api/jobs/'+jobId+'/signature',{imageData:canvas.toDataURL('image/png')},{headers:authHeaders});
+    showMessage('Signature saved','success');
+    await selectJob(jobId);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function uploadImages(e,id){
+  e.preventDefault();
+  const input=document.getElementById('jobImagesInput');
+  if(!input.files.length){ showMessage('Please select image files','warning'); return; }
+  const formData=new FormData();
+  [...input.files].forEach(file=>formData.append('files',file));
+  try{
+    await axios.post('/api/jobs/'+id+'/images',formData,{headers:{...authHeaders,'Content-Type':'multipart/form-data'}});
+    input.value='';
+    showMessage('Images uploaded','success');
+    await loadJobs();
+    await selectJob(id);
+  }catch(e2){ showMessage(resolveError(e2),'danger'); }
+}
+
+async function downloadReport(id){
+  try{
+    const res=await axios.get('/api/jobs/'+id+'/report',{headers:authHeaders,responseType:'blob'});
+    const url=URL.createObjectURL(res.data);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='job-'+id+'-report.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showMessage('PDF exported','success');
+  }catch(e){ showMessage(resolveError(e),'danger'); }
 }
 
 async function submitJob(e){ e.preventDefault(); const id=document.getElementById('jobId').value;
@@ -178,6 +346,7 @@ function resetPartForm(){ document.getElementById('partForm').reset(); partId.va
 async function adjustStock(id,deltaQuantity){ try{ await axios.patch('/api/parts/'+id+'/stock',{deltaQuantity},{headers:authHeaders}); showMessage('Stock adjusted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
 async function deletePart(id){ if(!confirm('Delete part?')) return; try{ await axios.delete('/api/parts/'+id,{headers:authHeaders}); showMessage('Part deleted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
 
+window.addEventListener('beforeunload', cleanupPreviewUrls);
 init();
 </script>
 </body>

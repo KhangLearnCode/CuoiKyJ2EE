@@ -75,6 +75,20 @@ public class Job {
     @OneToMany(mappedBy = "job", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<JobPartUsage> partUsages = new ArrayList<>();
 
+    @OneToMany(mappedBy = "job", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<JobImage> images = new ArrayList<>();
+
+    @Column(length = 500)
+    private String signaturePath;
+
+    @Column(length = 100)
+    private String signatureContentType;
+
+    @Column(length = 120)
+    private String signatureSignedBy;
+
+    private LocalDateTime signatureSignedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

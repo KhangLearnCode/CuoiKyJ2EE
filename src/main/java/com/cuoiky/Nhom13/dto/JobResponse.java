@@ -28,4 +28,9 @@ public class JobResponse {
     List<JobActivityResponse> timeline;
     List<ChecklistItemResponse> checklist;
     List<JobPartUsageResponse> usedParts;
+    List<JobImageResponse> images;
+    String signatureImageUrl;
+    String signatureSignedBy;
+    LocalDateTime signatureSignedAt;
+    String reportPdfUrl;
 }

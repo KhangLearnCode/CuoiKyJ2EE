@@ -8,6 +8,7 @@ import com.cuoiky.Nhom13.dto.JobActivityResponse;
 import com.cuoiky.Nhom13.dto.JobPartUsageRequest;
 import com.cuoiky.Nhom13.dto.JobPartUsageResponse;
 import com.cuoiky.Nhom13.dto.JobRequest;
+import com.cuoiky.Nhom13.dto.JobImageResponse;
 import com.cuoiky.Nhom13.dto.JobResponse;
 import com.cuoiky.Nhom13.dto.PageResponse;
 import com.cuoiky.Nhom13.model.Assignment;
@@ -16,6 +17,7 @@ import com.cuoiky.Nhom13.model.Job;
 import com.cuoiky.Nhom13.model.JobActivity;
 import com.cuoiky.Nhom13.model.JobActivityType;
 import com.cuoiky.Nhom13.model.JobChecklistItem;
+import com.cuoiky.Nhom13.model.JobImage;
 import com.cuoiky.Nhom13.model.JobPartUsage;
 import com.cuoiky.Nhom13.model.JobPriority;
 import com.cuoiky.Nhom13.model.JobStatus;
@@ -24,6 +26,7 @@ import com.cuoiky.Nhom13.model.User;
 import com.cuoiky.Nhom13.repository.AssignmentRepository;
 import com.cuoiky.Nhom13.repository.JobActivityRepository;
 import com.cuoiky.Nhom13.repository.JobChecklistItemRepository;
+import com.cuoiky.Nhom13.repository.JobImageRepository;
 import com.cuoiky.Nhom13.repository.JobPartUsageRepository;
 import com.cuoiky.Nhom13.repository.JobRepository;
 import com.cuoiky.Nhom13.repository.PartRepository;
@@ -38,6 +41,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -57,6 +61,9 @@ public class JobService {
     private final JobChecklistItemRepository checklistItemRepository;
     private final PartRepository partRepository;
     private final JobPartUsageRepository jobPartUsageRepository;
+    private final JobImageRepository jobImageRepository;
+    private final JobStorageService jobStorageService;
+    private final JobReportService jobReportService;
 
     public JobService(JobRepository jobRepository,
                       AssignmentRepository assignmentRepository,
@@ -64,7 +71,10 @@ public class JobService {
                       UserRepository userRepository,
                       JobChecklistItemRepository checklistItemRepository,
                       PartRepository partRepository,
-                      JobPartUsageRepository jobPartUsageRepository) {
+                      JobPartUsageRepository jobPartUsageRepository,
+                      JobImageRepository jobImageRepository,
+                      JobStorageService jobStorageService,
+                      JobReportService jobReportService) {
         this.jobRepository = jobRepository;
         this.assignmentRepository = assignmentRepository;
         this.jobActivityRepository = jobActivityRepository;
@@ -72,6 +82,9 @@ public class JobService {
         this.checklistItemRepository = checklistItemRepository;
         this.partRepository = partRepository;
         this.jobPartUsageRepository = jobPartUsageRepository;
+        this.jobImageRepository = jobImageRepository;
+        this.jobStorageService = jobStorageService;
+        this.jobReportService = jobReportService;
     }
 
     public JobResponse create(JobRequest request) {
@@ -288,6 +301,93 @@ public class JobService {
         jobRepository.delete(job);
     }
 
+    public JobResponse uploadImages(Long jobId, MultipartFile[] files, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        if (files == null || files.length == 0) {
+            throw new IllegalArgumentException("Please select at least one image");
+        }
+        User actor = userRepository.findByUsername(username).orElse(null);
+        int uploaded = 0;
+        for (MultipartFile file : files) {
+            if (file == null || file.isEmpty()) {
+                continue;
+            }
+            JobStorageService.StoredFile storedFile = jobStorageService.storeImage(jobId, file);
+            JobImage image = new JobImage();
+            image.setJob(job);
+            image.setFileName(storedFile.originalFileName());
+            image.setContentType(storedFile.contentType());
+            image.setStoragePath(storedFile.storagePath());
+            image.setUploadedBy(username);
+            jobImageRepository.save(image);
+            uploaded++;
+        }
+        if (uploaded == 0) {
+            throw new IllegalArgumentException("Please select at least one image");
+        }
+        saveActivity(job, JobActivityType.IMAGE_UPLOADED, actor, job.getStatus(), job.getStatus(),
+                "Uploaded " + uploaded + " image(s)");
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    public JobResponse saveSignature(Long jobId, String imageData, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        User actor = userRepository.findByUsername(username).orElse(null);
+        JobStorageService.StoredFile storedFile = jobStorageService.storeSignature(jobId, imageData);
+        job.setSignaturePath(storedFile.storagePath());
+        job.setSignatureContentType(storedFile.contentType());
+        job.setSignatureSignedBy(username);
+        job.setSignatureSignedAt(LocalDateTime.now());
+        jobRepository.save(job);
+        saveActivity(job, JobActivityType.SIGNATURE_CAPTURED, actor, job.getStatus(), job.getStatus(),
+                "Electronic signature captured");
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    @Transactional(readOnly = true)
+    public JobImage getJobImage(Long jobId, Long imageId, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        JobImage image = jobImageRepository.findById(imageId)
+                .orElseThrow(() -> new IllegalArgumentException("Image not found"));
+        if (!image.getJob().getId().equals(job.getId())) {
+            throw new IllegalArgumentException("Image does not belong to this job");
+        }
+        return image;
+    }
+
+    @Transactional(readOnly = true)
+    public Job getJobForSignature(Long jobId, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        if (!StringUtils.hasText(job.getSignaturePath())) {
+            throw new IllegalArgumentException("Signature not found");
+        }
+        return job;
+    }
+
+    public byte[] exportReport(Long jobId, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        User actor = userRepository.findByUsername(username).orElse(null);
+        byte[] report = jobReportService.generate(job);
+        saveActivity(job, JobActivityType.REPORT_EXPORTED, actor, job.getStatus(), job.getStatus(),
+                "PDF report exported");
+        return report;
+    }
+
     private void applyJobRequest(Job job, JobRequest request) {
         job.setTitle(request.getTitle());
         job.setDescription(request.getDescription());
@@ -403,6 +503,18 @@ public class JobService {
                         .build())
                 .toList();
 
+        List<JobImageResponse> images = job.getImages().stream()
+                .sorted((left, right) -> right.getUploadedAt().compareTo(left.getUploadedAt()))
+                .map(image -> JobImageResponse.builder()
+                        .id(image.getId())
+                        .fileName(image.getFileName())
+                        .contentType(image.getContentType())
+                        .uploadedBy(image.getUploadedBy())
+                        .uploadedAt(image.getUploadedAt())
+                        .imageUrl("/api/jobs/" + job.getId() + "/images/" + image.getId())
+                        .build())
+                .toList();
+
         return JobResponse.builder()
                 .id(job.getId())
                 .jobCode(job.getJobCode())
@@ -420,6 +532,11 @@ public class JobService {
                 .timeline(timeline)
                 .checklist(checklist)
                 .usedParts(usedParts)
+                .images(images)
+                .signatureImageUrl(StringUtils.hasText(job.getSignaturePath()) ? "/api/jobs/" + job.getId() + "/signature/image" : null)
+                .signatureSignedBy(job.getSignatureSignedBy())
+                .signatureSignedAt(job.getSignatureSignedAt())
+                .reportPdfUrl("/api/jobs/" + job.getId() + "/report")
                 .build();
     }
 }

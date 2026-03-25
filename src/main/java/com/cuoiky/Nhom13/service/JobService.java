@@ -64,6 +64,7 @@ public class JobService {
     private final JobImageRepository jobImageRepository;
     private final JobStorageService jobStorageService;
     private final JobReportService jobReportService;
+    private final NotificationService notificationService;
 
     public JobService(JobRepository jobRepository,
                       AssignmentRepository assignmentRepository,
@@ -74,7 +75,8 @@ public class JobService {
                       JobPartUsageRepository jobPartUsageRepository,
                       JobImageRepository jobImageRepository,
                       JobStorageService jobStorageService,
-                      JobReportService jobReportService) {
+                      JobReportService jobReportService,
+                      NotificationService notificationService) {
         this.jobRepository = jobRepository;
         this.assignmentRepository = assignmentRepository;
         this.jobActivityRepository = jobActivityRepository;
@@ -85,6 +87,7 @@ public class JobService {
         this.jobImageRepository = jobImageRepository;
         this.jobStorageService = jobStorageService;
         this.jobReportService = jobReportService;
+        this.notificationService = notificationService;
     }
 
     public JobResponse create(JobRequest request) {
@@ -95,6 +98,7 @@ public class JobService {
         Job savedJob = jobRepository.save(job);
         saveActivity(savedJob, JobActivityType.CREATED, null, null, JobStatus.CREATED,
                 "Work order created");
+        notificationService.notifyJobCreated(savedJob);
         return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
     }
 
@@ -207,6 +211,9 @@ public class JobService {
         Job savedJob = jobRepository.save(job);
         saveActivity(savedJob, JobActivityType.STATUS_CHANGED, actor, previousStatus, status,
                 "Status changed from " + previousStatus + " to " + status);
+        if (status != previousStatus) {
+            notificationService.notifyJobStatusChanged(savedJob);
+        }
         return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
     }
 

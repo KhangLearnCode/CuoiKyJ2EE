@@ -6,11 +6,16 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class PartRequest {
     @NotBlank
     @Size(max = 60)
     private String partCode;
+
+    @Size(max = 120)
+    private String barcode;
 
     @NotBlank
     @Size(max = 150)
@@ -30,4 +35,6 @@ public class PartRequest {
 
     @NotNull
     private Boolean active;
+
+    private List<@Size(max = 255) String> stepTemplates;
 }

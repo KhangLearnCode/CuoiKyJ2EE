@@ -30,6 +30,9 @@ public class Part {
     @Column(nullable = false, unique = true, length = 60)
     private String partCode;
 
+    @Column(unique = true, length = 120)
+    private String barcode;
+
     @Column(nullable = false, length = 150)
     private String partName;
 
@@ -44,6 +47,9 @@ public class Part {
 
     @Column(nullable = false)
     private Boolean active = true;
+
+    @Column(length = 4000)
+    private String stepTemplateText;
 
     @OneToMany(mappedBy = "part")
     private List<JobPartUsage> usages = new ArrayList<>();

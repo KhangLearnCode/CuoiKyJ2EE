@@ -4,23 +4,160 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>FSM Jobs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <style>
-    .signature-canvas { width: 100%; height: 180px; border: 1px dashed #6c757d; border-radius: 8px; touch-action: none; background: #fff; }
-    .job-image { width: 100%; height: 150px; object-fit: cover; background: #f8f9fa; border-radius: 8px; }
+    :root {
+      --bg: #f6f0e6;
+      --surface: rgba(255,255,255,0.78);
+      --surface-strong: #fffdfa;
+      --text: #1c2430;
+      --muted: #667085;
+      --line: rgba(28, 36, 48, 0.10);
+      --brand: #0f766e;
+      --brand-2: #c2410c;
+      --shadow: 0 24px 60px rgba(15, 23, 42, 0.10);
+    }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 25%),
+        radial-gradient(circle at top right, rgba(194, 65, 12, 0.12), transparent 20%),
+        linear-gradient(180deg, #fbf7f1 0%, #eee4d6 100%);
+      color: var(--text);
+      font-family: "Manrope", sans-serif;
+    }
+    .workspace-shell {
+      max-width: 1540px;
+    }
+    .workspace-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 20px 0 18px;
+      backdrop-filter: blur(18px);
+      background: rgba(246, 240, 230, 0.72);
+    }
+    .workspace-brand {
+      font-family: "Space Grotesk", sans-serif;
+      font-size: clamp(2rem, 3vw, 2.8rem);
+      line-height: 0.95;
+      letter-spacing: -0.05em;
+      margin: 0;
+    }
+    .workspace-subtitle {
+      color: var(--muted);
+      max-width: 64ch;
+    }
+    .control-chip {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.66);
+      padding: 0.85rem 1rem;
+      font-weight: 700;
+    }
+    .glass-card,
+    .card {
+      border: 1px solid rgba(255,255,255,0.7) !important;
+      border-radius: 24px !important;
+      background: var(--surface) !important;
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+    }
+    .card-header {
+      background: transparent !important;
+      border-bottom: 1px solid var(--line) !important;
+      padding: 1.05rem 1.25rem !important;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .card-body {
+      padding: 1.2rem 1.25rem !important;
+    }
+    .form-control,
+    .form-select {
+      border-radius: 16px !important;
+      border: 1px solid var(--line) !important;
+      min-height: 46px;
+      background: rgba(255,255,255,0.8) !important;
+    }
+    .form-control:focus,
+    .form-select:focus {
+      border-color: rgba(15,118,110,0.45) !important;
+      box-shadow: 0 0 0 0.2rem rgba(15,118,110,0.12) !important;
+    }
+    .btn {
+      border-radius: 14px !important;
+      font-weight: 700 !important;
+    }
+    #messageBox {
+      border-radius: 20px;
+      border: 1px solid transparent;
+      box-shadow: var(--shadow);
+    }
+    .signature-canvas { width: 100%; height: 180px; border: 1px dashed #8b99ad; border-radius: 18px; touch-action: none; background: #fff; }
+    .job-image { width: 100%; height: 150px; object-fit: cover; background: #f8f9fa; border-radius: 14px; }
+    .notification-item { border: 1px solid var(--line); border-radius: 18px; padding: 14px; margin-bottom: 12px; background: var(--surface-strong); }
+    .notification-item.unread { border-color: rgba(15,118,110,0.35); background: rgba(232, 248, 245, 0.95); }
+    #scannerReader { width: 100%; min-height: 240px; border: 1px dashed #8b99ad; border-radius: 18px; overflow: hidden; background: rgba(255,255,255,0.92); }
+    .lookup-result { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: var(--surface-strong); }
+    #jobsBody > div,
+    #partsList > div {
+      border: 1px solid var(--line) !important;
+      border-radius: 18px !important;
+      background: var(--surface-strong);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+    }
+    #selectedJobBox ul {
+      padding-left: 1.1rem;
+    }
+    #partQrPanel {
+      border-radius: 18px !important;
+      border: 1px solid var(--line) !important;
+    }
+    @media (max-width: 991px) {
+      .workspace-header {
+        position: static;
+      }
+    }
   </style>
 </head>
-<body class="bg-light">
-<div class="container py-3">
-  <div class="d-flex justify-content-between mb-3">
-    <h4>FSM Jobs</h4>
-    <div><span id="userLabel" class="me-2"></span><button class="btn btn-sm btn-danger" onclick="logout()">Logout</button></div>
+<body>
+<div class="container workspace-shell py-3">
+  <div class="workspace-header mb-3">
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
+      <div>
+        <div class="small text-uppercase fw-bold text-secondary mb-2">Operations Workspace</div>
+        <h1 class="workspace-brand">FSM Jobs Workspace</h1>
+        <div class="workspace-subtitle mt-2">Dispatch, field execution, parts lookup, notifications, signatures, and inventory in one operational surface.</div>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 justify-content-lg-end">
+        <span id="userLabel" class="control-chip"></span>
+        <div>
+      <button class="btn btn-sm btn-outline-dark me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+          <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="messageBox" class="alert d-none"></div>
+  <div id="notificationPanel" class="card mb-3 d-none">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Thong bao</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="markAllNotificationsRead()" type="button">Danh dau da doc</button>
+    </div>
+    <div class="card-body" id="notificationList"><div class="text-muted">Chua co thong bao</div></div>
+  </div>
 
-  <div class="row g-3">
+  <div class="row g-4">
     <div class="col-lg-4">
       <div class="card mb-3" id="jobFormCard">
         <div class="card-header">Job Form (Admin)</div>
@@ -41,7 +178,7 @@
         </div>
       </div>
 
-      <div class="card mb-3">
+      <div class="card mb-3 glass-card">
         <div class="card-header">Filters</div>
         <div class="card-body">
           <input class="form-control mb-2" id="filterKeyword" placeholder="Keyword"/>
@@ -51,12 +188,30 @@
         </div>
       </div>
 
-      <div class="card" id="inventoryCard">
+      <div class="card mb-3 glass-card">
+        <div class="card-header">Parts Lookup</div>
+        <div class="card-body">
+          <div id="scannerReader" class="mb-2"></div>
+          <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-sm btn-primary" type="button" onclick="startScanner()">Bat camera</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="stopScanner()">Dung camera</button>
+          </div>
+          <div class="input-group input-group-sm mb-2">
+            <input class="form-control" id="lookupKeyword" placeholder="Nhap part code / barcode / ten vat tu"/>
+            <button class="btn btn-outline-dark" type="button" onclick="lookupPart()">Lookup</button>
+            <button class="btn btn-outline-secondary" type="button" onclick="searchParts()">Search</button>
+          </div>
+          <div id="lookupResults" class="small"></div>
+        </div>
+      </div>
+
+      <div class="card glass-card" id="inventoryCard">
         <div class="card-header">Inventory (Admin)</div>
         <div class="card-body">
           <form id="partForm" class="mb-2">
             <input type="hidden" id="partId"/>
             <input class="form-control mb-2" id="partCode" placeholder="Part Code" required/>
+            <input class="form-control mb-2" id="partBarcode" placeholder="Barcode / QR code value"/>
             <input class="form-control mb-2" id="partName" placeholder="Part Name" required/>
             <div class="row g-2 mb-2">
               <div class="col"><input class="form-control" id="partUnit" value="pcs" required/></div>
@@ -66,23 +221,29 @@
               <div class="col"><input class="form-control" id="partMinStock" type="number" min="0" placeholder="Min" required/></div>
               <div class="col"><select class="form-select" id="partActive"><option value="true" selected>Active</option><option value="false">Inactive</option></select></div>
             </div>
+            <textarea class="form-control mb-2" id="partSteps" rows="4" placeholder="Step templates, moi dong la mot buoc"></textarea>
             <button class="btn btn-primary btn-sm" type="submit" id="partSubmitBtn">Save Part</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" onclick="resetPartForm()">Reset</button>
           </form>
+          <div id="partQrPanel" class="border rounded p-2 mb-2 bg-white d-none">
+            <div class="small fw-semibold mb-1" id="partQrTitle">QR Preview</div>
+            <div class="small text-muted mb-2" id="partQrValue"></div>
+            <div id="partQrCode" class="d-flex justify-content-center"></div>
+          </div>
           <div id="partsList" class="small"></div>
         </div>
       </div>
     </div>
 
     <div class="col-lg-4">
-      <div class="card">
+      <div class="card glass-card">
         <div class="card-header d-flex justify-content-between"><span>Jobs</span><span id="jobCount" class="badge text-bg-dark">0</span></div>
         <div class="card-body" id="jobsBody"></div>
       </div>
     </div>
 
     <div class="col-lg-4">
-      <div class="card">
+      <div class="card glass-card">
         <div class="card-header">Selected Job</div>
         <div class="card-body" id="selectedJobBox"><div class="text-muted">Select job</div></div>
       </div>
@@ -94,7 +255,7 @@
 const user = JSON.parse(localStorage.getItem('user')); if (!user || !user.token) window.location.href='/login';
 const isAdmin = user.roles.includes('ROLE_ADMIN');
 const authHeaders = { Authorization:'Bearer '+user.token };
-const state = { jobs:[], selected:null, parts:[], previewUrls:[] };
+const state = { jobs:[], selected:null, parts:[], previewUrls:[], notifications:[], notificationPanelOpen:false, notificationPoller:null, lookupResult:null, lookupSearchResults:[], scannerInstance:null, scannerRunning:false };
 const signatureState = { drawing:false, hasStroke:false };
 document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(',');
 if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); }
@@ -107,7 +268,7 @@ function logout(){ cleanupPreviewUrls(); localStorage.removeItem('user'); window
 function formatDateTime(v){ return v ? new Date(v).toLocaleString() : ''; }
 function cleanupPreviewUrls(){ state.previewUrls.forEach(url=>URL.revokeObjectURL(url)); state.previewUrls=[]; }
 
-async function init(){ await loadParts(); await loadJobs(); }
+async function init(){ await loadParts(); await loadJobs(); await loadNotifications(); startNotificationPolling(); }
 
 async function loadJobs(){
   try{
@@ -143,6 +304,181 @@ function renderJobs(){
       </div>
     </div>`;
   }).join('');
+}
+
+function toggleNotifications(){
+  state.notificationPanelOpen=!state.notificationPanelOpen;
+  document.getElementById('notificationPanel').classList.toggle('d-none',!state.notificationPanelOpen);
+}
+
+async function loadNotifications(){
+  try{
+    const [listRes,countRes]=await Promise.all([
+      axios.get('/api/notifications',{headers:authHeaders}),
+      axios.get('/api/notifications/unread-count',{headers:authHeaders})
+    ]);
+    state.notifications=listRes.data||[];
+    renderNotifications();
+    renderNotificationBadge(countRes.data?.count||0);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function renderNotifications(){
+  const box=document.getElementById('notificationList');
+  if(!state.notifications.length){ box.innerHTML='<div class="text-muted">Chua co thong bao</div>'; return; }
+  box.innerHTML=state.notifications.map(n=>`<div class="notification-item ${n.read?'':'unread'}">
+    <div class="d-flex justify-content-between gap-2">
+      <div>
+        <div class="fw-semibold">${escapeHtml(n.title)}</div>
+        <div class="small">${escapeHtml(n.message)}</div>
+        <div class="small text-muted">${formatDateTime(n.createdAt)}</div>
+      </div>
+      <div class="d-flex flex-column gap-1 align-items-end">
+        <button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job</button>
+        ${n.read?'':`<button class="btn btn-sm btn-outline-secondary" onclick="markNotificationRead(${n.id})" type="button">Da doc</button>`}
+        <button class="btn btn-sm btn-outline-danger" onclick="clearNotification(${n.id})" type="button">Clear</button>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+function renderNotificationBadge(count){
+  const badge=document.getElementById('notificationBadge');
+  badge.textContent=count;
+  badge.classList.toggle('d-none',!count);
+}
+
+async function markNotificationRead(id){
+  try{
+    await axios.patch('/api/notifications/'+id+'/read',{}, {headers:authHeaders});
+    await loadNotifications();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function markAllNotificationsRead(){
+  try{
+    await axios.patch('/api/notifications/read-all',{}, {headers:authHeaders});
+    await loadNotifications();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function clearNotification(id){
+  try{
+    await axios.delete('/api/notifications/'+id,{headers:authHeaders});
+    await loadNotifications();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function openNotificationJob(jobId,notificationId){
+  try{
+    if(notificationId) await axios.patch('/api/notifications/'+notificationId+'/read',{}, {headers:authHeaders});
+    await loadNotifications();
+    await selectJob(jobId);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function startNotificationPolling(){
+  if(state.notificationPoller) clearInterval(state.notificationPoller);
+  state.notificationPoller=setInterval(loadNotifications,15000);
+}
+
+async function startScanner(){
+  if(state.scannerRunning) return;
+  if(typeof Html5Qrcode === 'undefined'){ showMessage('Scanner library is not loaded','danger'); return; }
+  try{
+    state.scannerInstance = state.scannerInstance || new Html5Qrcode('scannerReader');
+    await state.scannerInstance.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      onScanSuccess,
+      () => {}
+    );
+    state.scannerRunning=true;
+  }catch(e){ showMessage('Cannot start camera: ' + resolveError(e),'danger'); }
+}
+
+async function stopScanner(){
+  if(!state.scannerInstance || !state.scannerRunning) return;
+  try{
+    await state.scannerInstance.stop();
+  }catch(e){}
+  state.scannerRunning=false;
+}
+
+async function onScanSuccess(decodedText){
+  document.getElementById('lookupKeyword').value = decodedText;
+  await stopScanner();
+  await lookupPart();
+}
+
+async function lookupPart(){
+  const code=document.getElementById('lookupKeyword').value.trim();
+  if(!code){ showMessage('Nhap ma QR/barcode/part code truoc','warning'); return; }
+  try{
+    const res=await axios.get('/api/parts/lookup',{headers:authHeaders,params:{code}});
+    state.lookupResult=res.data;
+    state.lookupSearchResults=[];
+    renderLookupResults();
+  }catch(e){
+    state.lookupResult=null;
+    renderLookupResults();
+    showMessage(resolveError(e),'danger');
+  }
+}
+
+async function searchParts(){
+  const keyword=document.getElementById('lookupKeyword').value.trim();
+  if(!keyword){ showMessage('Nhap tu khoa truoc','warning'); return; }
+  try{
+    const res=await axios.get('/api/parts/search',{headers:authHeaders,params:{keyword}});
+    state.lookupSearchResults=res.data||[];
+    state.lookupResult=null;
+    renderLookupResults();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function renderLookupResults(){
+  const box=document.getElementById('lookupResults');
+  if(state.lookupResult){
+    const p=state.lookupResult;
+    const steps=(p.stepTemplates||[]).map((step,index)=>`<li>${index+1}. ${escapeHtml(step)}</li>`).join('') || '<li>Chua co step templates</li>';
+    box.innerHTML=`<div class="lookup-result">
+      <div class="fw-semibold">${escapeHtml(p.partCode)}${p.barcode?` <span class="text-muted">(${escapeHtml(p.barcode)})</span>`:''}</div>
+      <div>${escapeHtml(p.partName)}</div>
+      <div class="small text-muted">Ton kho: ${p.stockQuantity} ${escapeHtml(p.unit)} | Min: ${p.minimumStockLevel} | ${p.active?'Active':'Inactive'}</div>
+      <div class="mt-2 small fw-semibold">Step templates</div>
+      <ol class="small mb-2 ps-3">${steps}</ol>
+      <button class="btn btn-sm btn-outline-primary" type="button" onclick="useLookupPart(${p.id})">Dung cho job dang chon</button>
+    </div>`;
+    return;
+  }
+  if(state.lookupSearchResults.length){
+    box.innerHTML=state.lookupSearchResults.map(p=>`<div class="lookup-result mb-2">
+      <div class="fw-semibold">${escapeHtml(p.partCode)}${p.barcode?` <span class="text-muted">(${escapeHtml(p.barcode)})</span>`:''}</div>
+      <div>${escapeHtml(p.partName)}</div>
+      <div class="small text-muted">Ton kho: ${p.stockQuantity} ${escapeHtml(p.unit)}</div>
+      <button class="btn btn-sm btn-outline-primary mt-2" type="button" onclick="selectLookupResult(${p.id})">Xem chi tiet</button>
+    </div>`).join('');
+    return;
+  }
+  box.innerHTML='<div class="text-muted">Chua co ket qua tra cuu</div>';
+}
+
+function selectLookupResult(partId){
+  const fromLoaded=state.parts.find(p=>p.id===partId);
+  if(fromLoaded){
+    state.lookupResult=fromLoaded;
+    state.lookupSearchResults=[];
+    renderLookupResults();
+  }
+}
+
+function useLookupPart(partId){
+  if(!state.selected){ showMessage('Hay mo mot job truoc','warning'); return; }
+  const select=document.getElementById('usePartId');
+  if(!select){ showMessage('Khong tim thay form su dung vat tu','danger'); return; }
+  select.value=String(partId);
+  showMessage('Da chon vat tu cho job hien tai','success');
 }
 
 async function selectJob(id){
@@ -335,18 +671,23 @@ async function usePart(e,id){ e.preventDefault(); try{ await axios.post('/api/jo
 
 async function loadParts(){ try{ const r=await axios.get('/api/parts',{headers:authHeaders}); state.parts=r.data||[]; renderParts(); }catch(e){ showMessage(resolveError(e),'danger'); }}
 function renderParts(){ const b=document.getElementById('partsList'); if(!b) return; if(!state.parts.length){ b.innerHTML='No parts'; return; }
-  b.innerHTML=state.parts.map(p=>`<div class="border rounded p-2 mb-1"><strong>${p.partCode}</strong> ${p.partName} | stock ${p.stockQuantity}
-  ${isAdmin?`<div><button class="btn btn-sm btn-outline-primary" onclick="editPart(${p.id})">Edit</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},10)">+10</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},-10)">-10</button><button class="btn btn-sm btn-outline-danger" onclick="deletePart(${p.id})">Delete</button></div>`:''}</div>`).join(''); }
+  b.innerHTML=state.parts.map(p=>`<div class="border rounded p-2 mb-1"><strong>${p.partCode}</strong>${p.barcode?` <span class="text-muted">(${escapeHtml(p.barcode)})</span>`:''} ${p.partName} | stock ${p.stockQuantity}
+  ${isAdmin?`<div><button class="btn btn-sm btn-outline-primary" onclick="editPart(${p.id})">Edit</button><button class="btn btn-sm btn-outline-dark" onclick="showPartQr(${p.id})">QR</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},10)">+10</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},-10)">-10</button><button class="btn btn-sm btn-outline-danger" onclick="deletePart(${p.id})">Delete</button></div>`:''}</div>`).join(''); }
 
-async function submitPart(e){ e.preventDefault(); const id=partId.value; const payload={ partCode:partCode.value.trim(), partName:partName.value.trim(), unit:partUnit.value.trim(), stockQuantity:Number(partStock.value), minimumStockLevel:Number(partMinStock.value), active:partActive.value==='true' };
-  try{ if(id){ await axios.put('/api/parts/'+id,payload,{headers:authHeaders}); showMessage('Part updated','success'); } else { await axios.post('/api/parts',payload,{headers:authHeaders}); showMessage('Part created','success'); }
-    resetPartForm(); await loadParts(); if(state.selected) renderSelected(); }catch(er){ showMessage(resolveError(er),'danger'); }}
-function editPart(id){ const p=state.parts.find(x=>x.id===id); if(!p) return; partId.value=p.id; partCode.value=p.partCode; partName.value=p.partName; partUnit.value=p.unit; partStock.value=p.stockQuantity; partMinStock.value=p.minimumStockLevel; partActive.value=String(p.active); partSubmitBtn.textContent='Update Part'; }
-function resetPartForm(){ document.getElementById('partForm').reset(); partId.value=''; partUnit.value='pcs'; partActive.value='true'; partSubmitBtn.textContent='Save Part'; }
+async function submitPart(e){ e.preventDefault(); const id=partId.value; const payload={ partCode:partCode.value.trim(), barcode:partBarcode.value.trim() || null, partName:partName.value.trim(), unit:partUnit.value.trim(), stockQuantity:Number(partStock.value), minimumStockLevel:Number(partMinStock.value), active:partActive.value==='true', stepTemplates:partSteps.value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean) };
+  try{ const res=id ? await axios.put('/api/parts/'+id,payload,{headers:authHeaders}) : await axios.post('/api/parts',payload,{headers:authHeaders}); showMessage(id?'Part updated':'Part created','success');
+    resetPartForm(); await loadParts(); renderLookupResults(); showPartQr(res.data.id); if(state.selected) renderSelected(); }catch(er){ showMessage(resolveError(er),'danger'); }}
+function editPart(id){ const p=state.parts.find(x=>x.id===id); if(!p) return; partId.value=p.id; partCode.value=p.partCode; partBarcode.value=p.barcode || ''; partName.value=p.partName; partUnit.value=p.unit; partStock.value=p.stockQuantity; partMinStock.value=p.minimumStockLevel; partActive.value=String(p.active); partSteps.value=(p.stepTemplates||[]).join('\n'); partSubmitBtn.textContent='Update Part'; showPartQr(id); }
+function resetPartForm(){ document.getElementById('partForm').reset(); partId.value=''; partBarcode.value=''; partUnit.value='pcs'; partActive.value='true'; partSteps.value=''; partSubmitBtn.textContent='Save Part'; document.getElementById('partQrPanel').classList.add('d-none'); document.getElementById('partQrCode').innerHTML=''; }
+function showPartQr(id){ const p=state.parts.find(x=>x.id===id); if(!p) return; const panel=document.getElementById('partQrPanel'); const codeBox=document.getElementById('partQrCode'); panel.classList.remove('d-none'); document.getElementById('partQrTitle').textContent=`QR: ${p.partCode} - ${p.partName}`; document.getElementById('partQrValue').textContent=p.barcode || ''; codeBox.innerHTML=''; if(typeof QRCode==='undefined'){ codeBox.textContent='QR library is not loaded'; return; } new QRCode(codeBox,{ text:p.barcode, width:180, height:180 }); }
 async function adjustStock(id,deltaQuantity){ try{ await axios.patch('/api/parts/'+id+'/stock',{deltaQuantity},{headers:authHeaders}); showMessage('Stock adjusted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
 async function deletePart(id){ if(!confirm('Delete part?')) return; try{ await axios.delete('/api/parts/'+id,{headers:authHeaders}); showMessage('Part deleted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
 
-window.addEventListener('beforeunload', cleanupPreviewUrls);
+window.addEventListener('beforeunload', () => {
+  cleanupPreviewUrls();
+  if(state.notificationPoller) clearInterval(state.notificationPoller);
+  stopScanner();
+});
 init();
 </script>
 </body>

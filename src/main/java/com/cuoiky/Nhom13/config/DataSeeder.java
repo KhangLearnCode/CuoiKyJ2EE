@@ -1,13 +1,16 @@
 package com.cuoiky.Nhom13.config;
 
-import com.cuoiky.Nhom13.dto.JobRequest;
 import com.cuoiky.Nhom13.dto.JobAssignmentRequest;
+import com.cuoiky.Nhom13.dto.JobPartUsageRequest;
+import com.cuoiky.Nhom13.dto.JobRequest;
 import com.cuoiky.Nhom13.model.ERole;
 import com.cuoiky.Nhom13.model.JobPriority;
 import com.cuoiky.Nhom13.model.JobStatus;
+import com.cuoiky.Nhom13.model.Part;
 import com.cuoiky.Nhom13.model.Role;
 import com.cuoiky.Nhom13.model.User;
 import com.cuoiky.Nhom13.repository.JobRepository;
+import com.cuoiky.Nhom13.repository.PartRepository;
 import com.cuoiky.Nhom13.repository.RoleRepository;
 import com.cuoiky.Nhom13.repository.UserRepository;
 import com.cuoiky.Nhom13.service.JobService;
@@ -28,6 +31,7 @@ public class DataSeeder implements CommandLineRunner {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JobRepository jobRepository;
+    private final PartRepository partRepository;
     private final JobService jobService;
 
     @Value("${app.seed.enabled:true}")
@@ -37,11 +41,13 @@ public class DataSeeder implements CommandLineRunner {
                       RoleRepository roleRepository,
                       PasswordEncoder passwordEncoder,
                       JobRepository jobRepository,
+                      PartRepository partRepository,
                       JobService jobService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.jobRepository = jobRepository;
+        this.partRepository = partRepository;
         this.jobService = jobService;
     }
 
@@ -55,16 +61,25 @@ public class DataSeeder implements CommandLineRunner {
         User tech1 = createUserIfMissing("tech01", "tech01@fsm.local", "123456", Set.of(ERole.ROLE_USER));
         User tech2 = createUserIfMissing("tech02", "tech02@fsm.local", "123456", Set.of(ERole.ROLE_USER));
 
-        Long job1 = createJob("Install Fiber Router", "Khảo sát và lắp router cho khách hàng VIP",
+        Part part1 = createPartIfMissing("P-ROUTER", "Fiber Router", "pcs", 50, 10);
+        Part part2 = createPartIfMissing("P-CABLE", "UTP Cable (meter)", "meter", 500, 100);
+        Part part3 = createPartIfMissing("P-SENSOR", "Temperature Sensor", "pcs", 40, 5);
+
+        Long job1 = createJob("Install Fiber Router", "Survey and install router for VIP customer",
                 "Nguyen Van A", "12 Nguyen Hue, District 1", LocalDate.now().plusDays(1), JobPriority.HIGH);
-        Long job2 = createJob("Repair Air Conditioner", "Kiểm tra block máy và thay cảm biến",
+        Long job2 = createJob("Repair Air Conditioner", "Inspect compressor and replace sensor",
                 "Tran Thi B", "88 Le Loi, District 3", LocalDate.now().plusDays(2), JobPriority.MEDIUM);
-        Long job3 = createJob("Electrical Inspection", "Kiểm tra tủ điện định kỳ tại nhà máy",
+        Long job3 = createJob("Electrical Inspection", "Routine electrical cabinet inspection",
                 "Factory C", "Lot B2, Thu Duc", LocalDate.now().plusDays(3), JobPriority.URGENT);
 
         assignAndMove(job1, tech1.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
-        assignAndMove(job2, tech2.getId(), admin.getUsername(), JobStatus.COMPLETED);
+        assignAndMove(job2, tech2.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
         assignAndMove(job3, tech1.getId(), admin.getUsername(), JobStatus.ASSIGNED);
+
+        usePart(job1, part1.getId(), 1, tech1.getUsername(), false, "Router installation");
+        usePart(job1, part2.getId(), 20, tech1.getUsername(), false, "Cable run");
+        usePart(job2, part3.getId(), 2, tech2.getUsername(), false, "Sensor replacement");
+        jobService.updateStatus(job2, JobStatus.COMPLETED, tech2.getUsername(), false);
     }
 
     private User createUserIfMissing(String username, String email, String rawPassword, Set<ERole> roleNames) {
@@ -86,6 +101,19 @@ public class DataSeeder implements CommandLineRunner {
             roles.add(role);
         });
         return roles;
+    }
+
+    private Part createPartIfMissing(String partCode, String partName, String unit, int stock, int minStock) {
+        return partRepository.findByPartCode(partCode).orElseGet(() -> {
+            Part part = new Part();
+            part.setPartCode(partCode);
+            part.setPartName(partName);
+            part.setUnit(unit);
+            part.setStockQuantity(stock);
+            part.setMinimumStockLevel(minStock);
+            part.setActive(true);
+            return partRepository.save(part);
+        });
     }
 
     private Long createJob(String title, String description, String customerName, String address,
@@ -120,5 +148,13 @@ public class DataSeeder implements CommandLineRunner {
         if (targetStatus == JobStatus.COMPLETED) {
             jobService.updateStatus(jobId, JobStatus.COMPLETED, technicianUsername, false);
         }
+    }
+
+    private void usePart(Long jobId, Long partId, int quantity, String username, boolean isAdmin, String note) {
+        JobPartUsageRequest request = new JobPartUsageRequest();
+        request.setPartId(partId);
+        request.setQuantityUsed(quantity);
+        request.setNote(note);
+        jobService.usePart(jobId, request, username, isAdmin);
     }
 }

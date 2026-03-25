@@ -26,4 +26,6 @@ public class JobResponse {
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
     List<JobActivityResponse> timeline;
+    List<ChecklistItemResponse> checklist;
+    List<JobPartUsageResponse> usedParts;
 }

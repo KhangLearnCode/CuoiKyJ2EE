@@ -1,516 +1,184 @@
 <!DOCTYPE html>
-<html lang="vi" xmlns:th="http://www.thymeleaf.org">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Field Service Management - Jobs</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 <body class="bg-light">
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container">
-        <a class="navbar-brand" href="/">FSM Job Dispatch</a>
-        <div class="d-flex align-items-center gap-2">
-            <span class="text-white" id="userLabel"></span>
-            <a class="btn btn-outline-light btn-sm" href="/">Trang chủ</a>
-            <button class="btn btn-danger btn-sm" onclick="logout()">Đăng xuất</button>
+<div class="container py-3">
+  <div class="d-flex justify-content-between mb-3">
+    <h4>FSM Jobs</h4>
+    <div><span id="userLabel" class="me-2"></span><button class="btn btn-sm btn-danger" onclick="logout()">Logout</button></div>
+  </div>
+
+  <div id="messageBox" class="alert d-none"></div>
+
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card mb-3" id="jobFormCard">
+        <div class="card-header">Job Form (Admin)</div>
+        <div class="card-body">
+          <form id="jobForm">
+            <input type="hidden" id="jobId"/>
+            <input class="form-control mb-2" id="title" placeholder="Title" required/>
+            <input class="form-control mb-2" id="customerName" placeholder="Customer" required/>
+            <input class="form-control mb-2" id="serviceAddress" placeholder="Address" required/>
+            <input class="form-control mb-2" id="scheduledDate" type="date" required/>
+            <select class="form-select mb-2" id="priority">
+              <option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>URGENT</option>
+            </select>
+            <textarea class="form-control mb-2" id="description" placeholder="Description"></textarea>
+            <button class="btn btn-primary btn-sm" type="submit" id="jobSubmitBtn">Save Job</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="resetJobForm()">Reset</button>
+          </form>
         </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header">Filters</div>
+        <div class="card-body">
+          <input class="form-control mb-2" id="filterKeyword" placeholder="Keyword"/>
+          <select class="form-select mb-2" id="filterStatus"><option value="">ALL</option><option>CREATED</option><option>ASSIGNED</option><option>IN_PROGRESS</option><option>COMPLETED</option><option>CANCELLED</option></select>
+          <select class="form-select mb-2" id="filterPriority"><option value="">ALL</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select>
+          <button class="btn btn-dark btn-sm" onclick="loadJobs()" type="button">Load Jobs</button>
+        </div>
+      </div>
+
+      <div class="card" id="inventoryCard">
+        <div class="card-header">Inventory (Admin)</div>
+        <div class="card-body">
+          <form id="partForm" class="mb-2">
+            <input type="hidden" id="partId"/>
+            <input class="form-control mb-2" id="partCode" placeholder="Part Code" required/>
+            <input class="form-control mb-2" id="partName" placeholder="Part Name" required/>
+            <div class="row g-2 mb-2">
+              <div class="col"><input class="form-control" id="partUnit" value="pcs" required/></div>
+              <div class="col"><input class="form-control" id="partStock" type="number" min="0" placeholder="Stock" required/></div>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col"><input class="form-control" id="partMinStock" type="number" min="0" placeholder="Min" required/></div>
+              <div class="col"><select class="form-select" id="partActive"><option value="true" selected>Active</option><option value="false">Inactive</option></select></div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit" id="partSubmitBtn">Save Part</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="resetPartForm()">Reset</button>
+          </form>
+          <div id="partsList" class="small"></div>
+        </div>
+      </div>
     </div>
-</nav>
 
-<div class="container py-4">
-    <div class="row g-4">
-        <div class="col-xl-3 col-lg-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">Tạo Work Order</div>
-                <div class="card-body">
-                    <form id="jobForm">
-                        <input type="hidden" id="jobId">
-                        <div class="mb-3">
-                            <label class="form-label" for="title">Tiêu đề</label>
-                            <input class="form-control" id="title" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="customerName">Khách hàng</label>
-                            <input class="form-control" id="customerName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="serviceAddress">Địa chỉ</label>
-                            <input class="form-control" id="serviceAddress" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="scheduledDate">Ngày hẹn</label>
-                            <input class="form-control" id="scheduledDate" type="date" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="priority">Ưu tiên</label>
-                            <select class="form-select" id="priority" required>
-                                <option value="LOW">LOW</option>
-                                <option value="MEDIUM" selected>MEDIUM</option>
-                                <option value="HIGH">HIGH</option>
-                                <option value="URGENT">URGENT</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="description">Mô tả</label>
-                            <textarea class="form-control" id="description" rows="4"></textarea>
-                        </div>
-                        <div class="d-grid gap-2">
-                            <button class="btn btn-primary" id="jobSubmitBtn" type="submit">Lưu công việc</button>
-                            <button class="btn btn-outline-secondary" type="button" onclick="resetJobForm()">Tạo mới</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <div class="card shadow-sm mt-4">
-                <div class="card-header bg-secondary text-white">Bộ lọc</div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="form-label" for="filterKeyword">Từ khóa</label>
-                        <input class="form-control" id="filterKeyword" placeholder="Mã job, tiêu đề, khách hàng">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="filterStatus">Trạng thái</label>
-                        <select class="form-select" id="filterStatus">
-                            <option value="">Tất cả</option>
-                            <option value="CREATED">CREATED</option>
-                            <option value="ASSIGNED">ASSIGNED</option>
-                            <option value="IN_PROGRESS">IN_PROGRESS</option>
-                            <option value="COMPLETED">COMPLETED</option>
-                            <option value="CANCELLED">CANCELLED</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="filterPriority">Ưu tiên</label>
-                        <select class="form-select" id="filterPriority">
-                            <option value="">Tất cả</option>
-                            <option value="LOW">LOW</option>
-                            <option value="MEDIUM">MEDIUM</option>
-                            <option value="HIGH">HIGH</option>
-                            <option value="URGENT">URGENT</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="filterAssignedUser">Kỹ thuật viên</label>
-                        <select class="form-select" id="filterAssignedUser">
-                            <option value="">Tất cả</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="sortBy">Sắp xếp theo</label>
-                        <select class="form-select" id="sortBy">
-                            <option value="createdAt">Ngày tạo</option>
-                            <option value="scheduledDate">Ngày hẹn</option>
-                            <option value="priority">Ưu tiên</option>
-                            <option value="status">Trạng thái</option>
-                            <option value="title">Tiêu đề</option>
-                            <option value="jobCode">Mã job</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="sortDir">Thứ tự</label>
-                        <select class="form-select" id="sortDir">
-                            <option value="DESC">Giảm dần</option>
-                            <option value="ASC">Tăng dần</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="pageSize">Số dòng/trang</label>
-                        <select class="form-select" id="pageSize">
-                            <option value="5">5</option>
-                            <option value="10" selected>10</option>
-                            <option value="20">20</option>
-                        </select>
-                    </div>
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-dark" type="button" onclick="applyFilters()">Tìm kiếm</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-5 col-lg-8">
-            <div class="card shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Danh sách Job</span>
-                    <span class="badge text-bg-dark" id="jobCount">0 job</span>
-                </div>
-                <div class="card-body">
-                    <div id="messageBox" class="alert d-none"></div>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead>
-                            <tr>
-                                <th>Mã</th>
-                                <th>Thông tin</th>
-                                <th>Phân công</th>
-                                <th>Trạng thái</th>
-                                <th>Thao tác</th>
-                            </tr>
-                            </thead>
-                            <tbody id="jobTableBody"></tbody>
-                        </table>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mt-3">
-                        <small class="text-muted" id="pageInfo">Trang 1 / 1</small>
-                        <div class="btn-group">
-                            <button class="btn btn-outline-secondary btn-sm" id="prevPageBtn" onclick="changePage(-1)">Trang trước</button>
-                            <button class="btn btn-outline-secondary btn-sm" id="nextPageBtn" onclick="changePage(1)">Trang sau</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-xl-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-dark text-white">Work Order Timeline</div>
-                <div class="card-body">
-                    <div id="timelineHeader" class="fw-semibold mb-3">Chọn một job để xem lịch sử</div>
-                    <div id="timelineBody" class="small text-muted">Timeline tạo job, assign và cập nhật trạng thái sẽ hiển thị tại đây.</div>
-                </div>
-            </div>
-
-            <div class="card shadow-sm mt-4">
-                <div class="card-header">Dữ liệu demo</div>
-                <div class="card-body">
-                    <div><strong>dispatcher</strong> / 123456</div>
-                    <div><strong>tech01</strong> / 123456</div>
-                    <div><strong>tech02</strong> / 123456</div>
-                    <div class="text-muted small mt-2">Seed data tự tạo khi bảng jobs còn trống.</div>
-                </div>
-            </div>
-        </div>
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between"><span>Jobs</span><span id="jobCount" class="badge text-bg-dark">0</span></div>
+        <div class="card-body" id="jobsBody"></div>
+      </div>
     </div>
+
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header">Selected Job</div>
+        <div class="card-body" id="selectedJobBox"><div class="text-muted">Select job</div></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (!user || !user.token) {
-        window.location.href = '/login';
-    }
+const user = JSON.parse(localStorage.getItem('user')); if (!user || !user.token) window.location.href='/login';
+const isAdmin = user.roles.includes('ROLE_ADMIN');
+const authHeaders = { Authorization:'Bearer '+user.token };
+const state = { jobs:[], selected:null, parts:[] };
+document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(',');
+if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); }
+document.getElementById('jobForm').addEventListener('submit', submitJob);
+document.getElementById('partForm').addEventListener('submit', submitPart);
 
-    const isAdmin = user.roles.includes('ROLE_ADMIN');
-    const authHeaders = { Authorization: 'Bearer ' + user.token };
-    const jobTableBody = document.getElementById('jobTableBody');
-    const messageBox = document.getElementById('messageBox');
-    const technicianOptions = document.getElementById('filterAssignedUser');
-    const timelineHeader = document.getElementById('timelineHeader');
-    const timelineBody = document.getElementById('timelineBody');
+function showMessage(m,t){ const b=document.getElementById('messageBox'); b.textContent=m; b.className='alert alert-'+t; }
+function resolveError(e){ return e.response?.data?.message || e.message || 'Error'; }
+function logout(){ localStorage.removeItem('user'); window.location.href='/login'; }
 
-    const pageState = {
-        page: 0,
-        size: 10,
-        totalPages: 1,
-        lastContent: []
-    };
+async function init(){ await loadParts(); await loadJobs(); }
 
-    document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(', ');
-    if (!isAdmin) {
-        document.getElementById('jobForm').closest('.card').classList.add('d-none');
-    }
+async function loadJobs(){
+  try{
+    const params={};
+    const k=document.getElementById('filterKeyword').value.trim(); if(k) params.keyword=k;
+    const s=document.getElementById('filterStatus').value; if(s) params.status=s;
+    const p=document.getElementById('filterPriority').value; if(p) params.priority=p;
+    const res=await axios.get('/api/jobs',{headers:authHeaders,params});
+    state.jobs=res.data.content||[]; document.getElementById('jobCount').textContent=state.jobs.length;
+    renderJobs(); if(state.jobs.length && !state.selected) await selectJob(state.jobs[0].id);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
 
-    document.getElementById('jobForm').addEventListener('submit', submitJobForm);
-    document.getElementById('pageSize').addEventListener('change', () => {
-        pageState.size = Number(document.getElementById('pageSize').value);
-        pageState.page = 0;
-        loadJobs();
-    });
+function renderJobs(){
+  const box=document.getElementById('jobsBody');
+  if(!state.jobs.length){ box.innerHTML='<div class="text-muted">No jobs</div>'; return; }
+  box.innerHTML=state.jobs.map(j=>{
+    const chk=(j.checklist||[]).filter(x=>x.completed).length+'/'+(j.checklist||[]).length;
+    return `<div class="border rounded p-2 mb-2">
+      <div><strong>${j.jobCode}</strong> - ${j.title}</div>
+      <div class="small text-muted">${j.customerName} | ${j.status} | checklist ${chk}</div>
+      <div class="mt-2">
+        <button class="btn btn-sm btn-outline-dark" onclick="selectJob(${j.id})">Open</button>
+        ${isAdmin?`<button class="btn btn-sm btn-outline-primary" onclick="editJob(${j.id})">Edit</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteJob(${j.id})">Delete</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
 
-    async function initPage() {
-        await loadTechnicians();
-        await loadJobs();
-    }
+async function selectJob(id){ try{ const r=await axios.get('/api/jobs/'+id,{headers:authHeaders}); state.selected=r.data; renderSelected(); }catch(e){ showMessage(resolveError(e),'danger'); }}
 
-    async function loadTechnicians() {
-        try {
-            const response = await axios.get('/api/users/technicians', { headers: authHeaders });
-            response.data.forEach(userItem => {
-                const option = document.createElement('option');
-                option.value = userItem.id;
-                option.textContent = userItem.username;
-                technicianOptions.appendChild(option);
-            });
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
+function renderSelected(){
+  const b=document.getElementById('selectedJobBox'); const j=state.selected; if(!j){ b.innerHTML='<div class="text-muted">Select job</div>'; return; }
+  const partOptions = state.parts.filter(x=>x.active).map(x=>`<option value="${x.id}">${x.partCode} (${x.stockQuantity})</option>`).join('');
+  const checklist=(j.checklist||[]).map(i=>`<div class="border rounded p-2 mb-2"><div><strong>${i.itemName}</strong> - ${i.completed?'DONE':'TODO'}</div>
+      <div class="small text-muted">${i.note||''}</div><button class="btn btn-sm ${i.completed?'btn-outline-warning':'btn-outline-success'}" onclick="toggleChecklist(${j.id},${i.id},${!i.completed})">${i.completed?'Undo':'Done'}</button></div>`).join('') || '<div class="text-muted">No checklist</div>';
+  const parts=(j.usedParts||[]).map(u=>`<li>${u.partCode} - ${u.quantityUsed} ${u.unit} (${u.usedBy||'system'})</li>`).join('') || '<li>No part usage</li>';
+  const timeline=(j.timeline||[]).map(t=>`<li>${t.activityType}: ${t.message}</li>`).join('') || '<li>No timeline</li>';
+  b.innerHTML=`<div><strong>${j.jobCode}</strong> ${j.title}</div><div class="small text-muted mb-2">${j.status} | ${j.assignedUsername||'Unassigned'}</div>
+    <h6>Checklist</h6>
+    ${isAdmin?`<form onsubmit="addChecklist(event,${j.id})" class="mb-2"><input id="checkName" class="form-control form-control-sm mb-1" placeholder="New item" required/><input id="checkNote" class="form-control form-control-sm mb-1" placeholder="Note"/><button class="btn btn-sm btn-primary">Add</button></form>`:''}
+    ${checklist}
+    <h6 class="mt-3">Use Part</h6>
+    <form onsubmit="usePart(event,${j.id})" class="mb-2"><select id="usePartId" class="form-select form-select-sm mb-1" required><option value="">Select part</option>${partOptions}</select>
+    <input id="useQty" type="number" min="1" class="form-control form-control-sm mb-1" placeholder="Qty" required/><input id="useNote" class="form-control form-control-sm mb-1" placeholder="Note"/><button class="btn btn-sm btn-dark">Record</button></form>
+    <ul>${parts}</ul>
+    <h6>Timeline</h6><ul>${timeline}</ul>`;
+}
 
-    function buildQueryParams() {
-        const params = {
-            page: pageState.page,
-            size: pageState.size,
-            sortBy: document.getElementById('sortBy').value,
-            sortDir: document.getElementById('sortDir').value
-        };
+async function submitJob(e){ e.preventDefault(); const id=document.getElementById('jobId').value;
+  const payload={ title:title.value.trim(), description:description.value.trim(), customerName:customerName.value.trim(), serviceAddress:serviceAddress.value.trim(), scheduledDate:scheduledDate.value, priority:priority.value };
+  try{ if(id){ await axios.put('/api/jobs/'+id,payload,{headers:authHeaders}); showMessage('Job updated','success'); } else { await axios.post('/api/jobs',payload,{headers:authHeaders}); showMessage('Job created','success'); }
+    resetJobForm(); state.selected=null; await loadJobs();
+  }catch(e2){ showMessage(resolveError(e2),'danger'); }
+}
+function editJob(id){ selectJob(id).then(()=>{ const j=state.selected; jobId.value=j.id; title.value=j.title; description.value=j.description||''; customerName.value=j.customerName; serviceAddress.value=j.serviceAddress; scheduledDate.value=j.scheduledDate; priority.value=j.priority; jobSubmitBtn.textContent='Update Job'; }); }
+function resetJobForm(){ document.getElementById('jobForm').reset(); jobId.value=''; priority.value='MEDIUM'; jobSubmitBtn.textContent='Save Job'; }
+async function deleteJob(id){ if(!confirm('Delete job?')) return; try{ await axios.delete('/api/jobs/'+id,{headers:authHeaders}); showMessage('Deleted','success'); state.selected=null; await loadJobs(); }catch(e){ showMessage(resolveError(e),'danger'); }}
 
-        const keyword = document.getElementById('filterKeyword').value.trim();
-        const status = document.getElementById('filterStatus').value;
-        const priority = document.getElementById('filterPriority').value;
-        const assignedUserId = document.getElementById('filterAssignedUser').value;
+async function addChecklist(e,id){ e.preventDefault(); try{ await axios.post('/api/jobs/'+id+'/checklist',{itemName:checkName.value.trim(),note:checkNote.value.trim()},{headers:authHeaders}); showMessage('Checklist added','success'); await loadJobs(); await selectJob(id);}catch(er){ showMessage(resolveError(er),'danger'); }}
+async function toggleChecklist(jobId,itemId,completed){ try{ await axios.patch('/api/jobs/'+jobId+'/checklist/'+itemId,{completed},{headers:authHeaders}); showMessage('Checklist updated','success'); await loadJobs(); await selectJob(jobId);}catch(er){ showMessage(resolveError(er),'danger'); }}
+async function usePart(e,id){ e.preventDefault(); try{ await axios.post('/api/jobs/'+id+'/parts-usage',{partId:Number(usePartId.value),quantityUsed:Number(useQty.value),note:useNote.value.trim()},{headers:authHeaders}); showMessage('Part usage recorded','success'); await loadParts(); await loadJobs(); await selectJob(id);}catch(er){ showMessage(resolveError(er),'danger'); }}
 
-        if (keyword) params.keyword = keyword;
-        if (status) params.status = status;
-        if (priority) params.priority = priority;
-        if (assignedUserId) params.assignedUserId = assignedUserId;
-        return params;
-    }
+async function loadParts(){ try{ const r=await axios.get('/api/parts',{headers:authHeaders}); state.parts=r.data||[]; renderParts(); }catch(e){ showMessage(resolveError(e),'danger'); }}
+function renderParts(){ const b=document.getElementById('partsList'); if(!b) return; if(!state.parts.length){ b.innerHTML='No parts'; return; }
+  b.innerHTML=state.parts.map(p=>`<div class="border rounded p-2 mb-1"><strong>${p.partCode}</strong> ${p.partName} | stock ${p.stockQuantity}
+  ${isAdmin?`<div><button class="btn btn-sm btn-outline-primary" onclick="editPart(${p.id})">Edit</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},10)">+10</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},-10)">-10</button><button class="btn btn-sm btn-outline-danger" onclick="deletePart(${p.id})">Delete</button></div>`:''}</div>`).join(''); }
 
-    async function loadJobs() {
-        clearMessage();
-        try {
-            const response = await axios.get('/api/jobs', { headers: authHeaders, params: buildQueryParams() });
-            renderJobs(response.data);
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
+async function submitPart(e){ e.preventDefault(); const id=partId.value; const payload={ partCode:partCode.value.trim(), partName:partName.value.trim(), unit:partUnit.value.trim(), stockQuantity:Number(partStock.value), minimumStockLevel:Number(partMinStock.value), active:partActive.value==='true' };
+  try{ if(id){ await axios.put('/api/parts/'+id,payload,{headers:authHeaders}); showMessage('Part updated','success'); } else { await axios.post('/api/parts',payload,{headers:authHeaders}); showMessage('Part created','success'); }
+    resetPartForm(); await loadParts(); if(state.selected) renderSelected(); }catch(er){ showMessage(resolveError(er),'danger'); }}
+function editPart(id){ const p=state.parts.find(x=>x.id===id); if(!p) return; partId.value=p.id; partCode.value=p.partCode; partName.value=p.partName; partUnit.value=p.unit; partStock.value=p.stockQuantity; partMinStock.value=p.minimumStockLevel; partActive.value=String(p.active); partSubmitBtn.textContent='Update Part'; }
+function resetPartForm(){ document.getElementById('partForm').reset(); partId.value=''; partUnit.value='pcs'; partActive.value='true'; partSubmitBtn.textContent='Save Part'; }
+async function adjustStock(id,deltaQuantity){ try{ await axios.patch('/api/parts/'+id+'/stock',{deltaQuantity},{headers:authHeaders}); showMessage('Stock adjusted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
+async function deletePart(id){ if(!confirm('Delete part?')) return; try{ await axios.delete('/api/parts/'+id,{headers:authHeaders}); showMessage('Part deleted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
 
-    function applyFilters() {
-        pageState.page = 0;
-        loadJobs();
-    }
-
-    function changePage(delta) {
-        const nextPage = pageState.page + delta;
-        if (nextPage < 0 || nextPage >= pageState.totalPages) {
-            return;
-        }
-        pageState.page = nextPage;
-        loadJobs();
-    }
-
-    function renderJobs(pageData) {
-        const jobs = pageData.content || [];
-        pageState.totalPages = Math.max(pageData.totalPages || 1, 1);
-        pageState.page = pageData.page || 0;
-        pageState.lastContent = jobs;
-
-        document.getElementById('jobCount').textContent = (pageData.totalElements || 0) + ' job';
-        document.getElementById('pageInfo').textContent = 'Trang ' + (pageState.page + 1) + ' / ' + pageState.totalPages;
-        document.getElementById('prevPageBtn').disabled = !!pageData.first;
-        document.getElementById('nextPageBtn').disabled = !!pageData.last;
-
-        jobTableBody.innerHTML = '';
-        if (jobs.length === 0) {
-            jobTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Không có công việc phù hợp</td></tr>';
-            renderTimeline(null);
-            return;
-        }
-
-        jobs.forEach(job => {
-            const assignControl = isAdmin ? buildAssignControl(job) : (job.assignedUsername || '<span class="text-muted">Chưa assign</span>');
-            const statusControl = buildStatusControl(job);
-            const actionButtons = isAdmin
-                ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="editJob(${job.id})">Sửa</button>
-                   <button class="btn btn-sm btn-outline-danger me-1" onclick="deleteJob(${job.id})">Xóa</button>
-                   <button class="btn btn-sm btn-outline-dark" onclick="selectJob(${job.id})">Timeline</button>`
-                : `<button class="btn btn-sm btn-outline-dark" onclick="selectJob(${job.id})">Timeline</button>`;
-
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><strong>${job.jobCode}</strong><div class="small text-muted">${job.priority}</div></td>
-                <td>
-                    <div class="fw-semibold">${job.title}</div>
-                    <div class="small">${job.customerName}</div>
-                    <div class="small text-muted">${job.serviceAddress}</div>
-                    <div class="small text-muted">Ngày hẹn: ${job.scheduledDate || ''}</div>
-                </td>
-                <td>${assignControl}</td>
-                <td>${statusControl}</td>
-                <td>${actionButtons}</td>
-            `;
-            jobTableBody.appendChild(row);
-        });
-
-        renderTimeline(jobs[0]);
-    }
-
-    function buildAssignControl(job) {
-        const options = Array.from(technicianOptions.options)
-            .filter(option => option.value)
-            .map(option => `<option value="${option.value}" ${String(job.assignedUserId) === option.value ? 'selected' : ''}>${option.textContent}</option>`)
-            .join('');
-        return `
-            <div class="small mb-2">${job.assignedUsername || 'Chưa assign'}</div>
-            <div class="input-group input-group-sm">
-                <select class="form-select" id="assign-${job.id}">
-                    <option value="">Chọn user</option>
-                    ${options}
-                </select>
-                <button class="btn btn-dark" onclick="assignJob(${job.id})">Assign</button>
-            </div>
-        `;
-    }
-
-    function buildStatusControl(job) {
-        const statuses = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
-        const options = statuses.map(status => `<option value="${status}" ${job.status === status ? 'selected' : ''}>${status}</option>`).join('');
-        return `
-            <div class="small mb-1">${job.status}</div>
-            <div class="input-group input-group-sm">
-                <select class="form-select" id="status-${job.id}">
-                    ${options}
-                </select>
-                <button class="btn btn-outline-success" onclick="updateStatus(${job.id})">Update</button>
-            </div>
-        `;
-    }
-
-    function renderTimeline(job) {
-        if (!job) {
-            timelineHeader.textContent = 'Chọn một job để xem lịch sử';
-            timelineBody.className = 'small text-muted';
-            timelineBody.innerHTML = 'Timeline tạo job, assign và cập nhật trạng thái sẽ hiển thị tại đây.';
-            return;
-        }
-
-        timelineHeader.textContent = job.jobCode + ' - ' + job.title;
-        const entries = job.timeline || [];
-        if (entries.length === 0) {
-            timelineBody.className = 'small text-muted';
-            timelineBody.innerHTML = 'Chưa có activity.';
-            return;
-        }
-
-        timelineBody.className = '';
-        timelineBody.innerHTML = entries.map(entry => `
-            <div class="border-start border-3 ps-3 pb-3 mb-3">
-                <div class="fw-semibold">${entry.activityType}</div>
-                <div>${entry.message}</div>
-                <div class="small text-muted">By: ${entry.performedBy || 'system'}</div>
-                <div class="small text-muted">At: ${formatDateTime(entry.createdAt)}</div>
-                <div class="small text-muted">${entry.fromStatus ? entry.fromStatus + ' -> ' + entry.toStatus : ''}</div>
-            </div>
-        `).join('');
-    }
-
-    function selectJob(jobId) {
-        const job = pageState.lastContent.find(item => item.id === jobId);
-        renderTimeline(job || null);
-    }
-
-    async function submitJobForm(event) {
-        event.preventDefault();
-        const jobId = document.getElementById('jobId').value;
-        const payload = {
-            title: document.getElementById('title').value.trim(),
-            description: document.getElementById('description').value.trim(),
-            customerName: document.getElementById('customerName').value.trim(),
-            serviceAddress: document.getElementById('serviceAddress').value.trim(),
-            scheduledDate: document.getElementById('scheduledDate').value,
-            priority: document.getElementById('priority').value
-        };
-
-        try {
-            if (jobId) {
-                await axios.put('/api/jobs/' + jobId, payload, { headers: authHeaders });
-                showMessage('Cập nhật job thành công', 'success');
-            } else {
-                await axios.post('/api/jobs', payload, { headers: authHeaders });
-                showMessage('Tạo job thành công', 'success');
-            }
-            resetJobForm();
-            await loadJobs();
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
-
-    async function editJob(id) {
-        try {
-            const response = await axios.get('/api/jobs/' + id, { headers: authHeaders });
-            const job = response.data;
-            document.getElementById('jobId').value = job.id;
-            document.getElementById('title').value = job.title;
-            document.getElementById('description').value = job.description || '';
-            document.getElementById('customerName').value = job.customerName;
-            document.getElementById('serviceAddress').value = job.serviceAddress;
-            document.getElementById('scheduledDate').value = job.scheduledDate;
-            document.getElementById('priority').value = job.priority;
-            document.getElementById('jobSubmitBtn').textContent = 'Cập nhật công việc';
-            renderTimeline(job);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
-
-    function resetJobForm() {
-        document.getElementById('jobForm').reset();
-        document.getElementById('jobId').value = '';
-        document.getElementById('priority').value = 'MEDIUM';
-        document.getElementById('jobSubmitBtn').textContent = 'Lưu công việc';
-    }
-
-    async function assignJob(jobId) {
-        const technicianId = document.getElementById('assign-' + jobId).value;
-        if (!technicianId) {
-            showMessage('Chọn kỹ thuật viên trước khi assign', 'warning');
-            return;
-        }
-        try {
-            await axios.post('/api/jobs/' + jobId + '/assign', { technicianId }, { headers: authHeaders });
-            showMessage('Phân công công việc thành công', 'success');
-            await loadJobs();
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
-
-    async function updateStatus(jobId) {
-        const status = document.getElementById('status-' + jobId).value;
-        try {
-            await axios.patch('/api/jobs/' + jobId + '/status', { status }, { headers: authHeaders });
-            showMessage('Cập nhật trạng thái thành công', 'success');
-            await loadJobs();
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
-
-    async function deleteJob(jobId) {
-        if (!confirm('Xóa job này?')) {
-            return;
-        }
-        try {
-            await axios.delete('/api/jobs/' + jobId, { headers: authHeaders });
-            showMessage('Đã xóa job', 'success');
-            await loadJobs();
-        } catch (error) {
-            showMessage(resolveError(error), 'danger');
-        }
-    }
-
-    function showMessage(message, type) {
-        messageBox.textContent = message;
-        messageBox.className = 'alert alert-' + type;
-    }
-
-    function clearMessage() {
-        messageBox.className = 'alert d-none';
-        messageBox.textContent = '';
-    }
-
-    function resolveError(error) {
-        return error.response?.data?.message || error.message || 'Đã xảy ra lỗi';
-    }
-
-    function formatDateTime(value) {
-        if (!value) {
-            return '';
-        }
-        return new Date(value).toLocaleString('vi-VN');
-    }
-
-    function logout() {
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-    }
-
-    initPage();
+init();
 </script>
 </body>
 </html>

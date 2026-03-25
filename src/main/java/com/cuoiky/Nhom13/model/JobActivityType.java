@@ -4,5 +4,7 @@ public enum JobActivityType {
     CREATED,
     ASSIGNED,
     STATUS_CHANGED,
-    UPDATED
+    UPDATED,
+    CHECKLIST_UPDATED,
+    PART_USED
 }

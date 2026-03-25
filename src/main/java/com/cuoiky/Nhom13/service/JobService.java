@@ -1,7 +1,12 @@
 package com.cuoiky.Nhom13.service;
 
+import com.cuoiky.Nhom13.dto.ChecklistItemRequest;
+import com.cuoiky.Nhom13.dto.ChecklistItemResponse;
+import com.cuoiky.Nhom13.dto.ChecklistItemUpdateRequest;
 import com.cuoiky.Nhom13.dto.JobAssignmentRequest;
 import com.cuoiky.Nhom13.dto.JobActivityResponse;
+import com.cuoiky.Nhom13.dto.JobPartUsageRequest;
+import com.cuoiky.Nhom13.dto.JobPartUsageResponse;
 import com.cuoiky.Nhom13.dto.JobRequest;
 import com.cuoiky.Nhom13.dto.JobResponse;
 import com.cuoiky.Nhom13.dto.PageResponse;
@@ -10,12 +15,18 @@ import com.cuoiky.Nhom13.model.ERole;
 import com.cuoiky.Nhom13.model.Job;
 import com.cuoiky.Nhom13.model.JobActivity;
 import com.cuoiky.Nhom13.model.JobActivityType;
+import com.cuoiky.Nhom13.model.JobChecklistItem;
+import com.cuoiky.Nhom13.model.JobPartUsage;
 import com.cuoiky.Nhom13.model.JobPriority;
 import com.cuoiky.Nhom13.model.JobStatus;
+import com.cuoiky.Nhom13.model.Part;
 import com.cuoiky.Nhom13.model.User;
 import com.cuoiky.Nhom13.repository.AssignmentRepository;
 import com.cuoiky.Nhom13.repository.JobActivityRepository;
+import com.cuoiky.Nhom13.repository.JobChecklistItemRepository;
+import com.cuoiky.Nhom13.repository.JobPartUsageRepository;
 import com.cuoiky.Nhom13.repository.JobRepository;
+import com.cuoiky.Nhom13.repository.PartRepository;
 import com.cuoiky.Nhom13.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
@@ -31,6 +42,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -42,15 +54,24 @@ public class JobService {
     private final AssignmentRepository assignmentRepository;
     private final JobActivityRepository jobActivityRepository;
     private final UserRepository userRepository;
+    private final JobChecklistItemRepository checklistItemRepository;
+    private final PartRepository partRepository;
+    private final JobPartUsageRepository jobPartUsageRepository;
 
     public JobService(JobRepository jobRepository,
                       AssignmentRepository assignmentRepository,
                       JobActivityRepository jobActivityRepository,
-                      UserRepository userRepository) {
+                      UserRepository userRepository,
+                      JobChecklistItemRepository checklistItemRepository,
+                      PartRepository partRepository,
+                      JobPartUsageRepository jobPartUsageRepository) {
         this.jobRepository = jobRepository;
         this.assignmentRepository = assignmentRepository;
         this.jobActivityRepository = jobActivityRepository;
         this.userRepository = userRepository;
+        this.checklistItemRepository = checklistItemRepository;
+        this.partRepository = partRepository;
+        this.jobPartUsageRepository = jobPartUsageRepository;
     }
 
     public JobResponse create(JobRequest request) {
@@ -164,9 +185,7 @@ public class JobService {
     public JobResponse updateStatus(Long jobId, JobStatus status, String username, boolean isAdmin) {
         Job job = getJobEntity(jobId);
         if (!isAdmin) {
-            if (job.getAssignedUser() == null || !job.getAssignedUser().getUsername().equals(username)) {
-                throw new AccessDeniedException("You can only update status for your assigned jobs");
-            }
+            validateOperator(job, username);
         }
         validateStatusTransition(job.getStatus(), status, job.getAssignedUser() != null);
         User actor = userRepository.findByUsername(username).orElse(null);
@@ -176,6 +195,92 @@ public class JobService {
         saveActivity(savedJob, JobActivityType.STATUS_CHANGED, actor, previousStatus, status,
                 "Status changed from " + previousStatus + " to " + status);
         return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
+    }
+
+    public JobResponse addChecklistItem(Long jobId, ChecklistItemRequest request, String username, boolean isAdmin) {
+        if (!isAdmin) {
+            throw new AccessDeniedException("Only admin can add checklist items");
+        }
+        Job job = getJobEntity(jobId);
+        JobChecklistItem item = new JobChecklistItem();
+        item.setJob(job);
+        item.setItemName(request.getItemName().trim());
+        item.setNote(request.getNote());
+        checklistItemRepository.save(item);
+
+        User actor = userRepository.findByUsername(username).orElse(null);
+        saveActivity(job, JobActivityType.CHECKLIST_UPDATED, actor, job.getStatus(), job.getStatus(),
+                "Checklist item added: " + item.getItemName());
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    public JobResponse updateChecklistItem(Long jobId,
+                                           Long checklistItemId,
+                                           ChecklistItemUpdateRequest request,
+                                           String username,
+                                           boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+
+        JobChecklistItem item = checklistItemRepository.findById(checklistItemId)
+                .orElseThrow(() -> new IllegalArgumentException("Checklist item not found"));
+        if (!item.getJob().getId().equals(job.getId())) {
+            throw new IllegalArgumentException("Checklist item does not belong to this job");
+        }
+
+        User actor = userRepository.findByUsername(username).orElse(null);
+        item.setCompleted(request.getCompleted());
+        item.setNote(request.getNote());
+        if (Boolean.TRUE.equals(request.getCompleted())) {
+            item.setCompletedAt(LocalDateTime.now());
+            item.setCompletedBy(actor);
+        } else {
+            item.setCompletedAt(null);
+            item.setCompletedBy(null);
+        }
+        checklistItemRepository.save(item);
+
+        saveActivity(job, JobActivityType.CHECKLIST_UPDATED, actor, job.getStatus(), job.getStatus(),
+                "Checklist updated: " + item.getItemName() + " = " + item.getCompleted());
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    public JobResponse usePart(Long jobId, JobPartUsageRequest request, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        if (job.getStatus() == JobStatus.COMPLETED || job.getStatus() == JobStatus.CANCELLED) {
+            throw new IllegalArgumentException("Cannot use parts for completed/cancelled jobs");
+        }
+
+        Part part = partRepository.findById(request.getPartId())
+                .orElseThrow(() -> new IllegalArgumentException("Part not found"));
+        if (!Boolean.TRUE.equals(part.getActive())) {
+            throw new IllegalArgumentException("Part is inactive");
+        }
+
+        int remaining = part.getStockQuantity() - request.getQuantityUsed();
+        if (remaining < 0) {
+            throw new IllegalArgumentException("Insufficient stock for part " + part.getPartCode());
+        }
+        part.setStockQuantity(remaining);
+        partRepository.save(part);
+
+        User actor = userRepository.findByUsername(username).orElse(null);
+        JobPartUsage usage = new JobPartUsage();
+        usage.setJob(job);
+        usage.setPart(part);
+        usage.setQuantityUsed(request.getQuantityUsed());
+        usage.setNote(request.getNote());
+        usage.setUsedBy(actor);
+        jobPartUsageRepository.save(usage);
+
+        saveActivity(job, JobActivityType.PART_USED, actor, job.getStatus(), job.getStatus(),
+                "Used " + usage.getQuantityUsed() + " " + part.getUnit() + " of " + part.getPartCode());
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
     }
 
     public void delete(Long id) {
@@ -199,6 +304,12 @@ public class JobService {
 
     private String generateJobCode() {
         return "JOB-" + LocalDateTime.now().format(CODE_FORMATTER);
+    }
+
+    private void validateOperator(Job job, String username) {
+        if (job.getAssignedUser() == null || !job.getAssignedUser().getUsername().equals(username)) {
+            throw new AccessDeniedException("You can only operate on your assigned jobs");
+        }
     }
 
     private void validateStatusTransition(JobStatus currentStatus, JobStatus newStatus, boolean hasAssignee) {
@@ -262,6 +373,36 @@ public class JobService {
                         .createdAt(activity.getCreatedAt())
                         .build())
                 .toList();
+
+        List<ChecklistItemResponse> checklist = job.getChecklistItems().stream()
+                .sorted(Comparator.comparing(JobChecklistItem::getCreatedAt))
+                .map(item -> ChecklistItemResponse.builder()
+                        .id(item.getId())
+                        .itemName(item.getItemName())
+                        .completed(item.getCompleted())
+                        .note(item.getNote())
+                        .completedBy(item.getCompletedBy() != null ? item.getCompletedBy().getUsername() : null)
+                        .completedAt(item.getCompletedAt())
+                        .createdAt(item.getCreatedAt())
+                        .updatedAt(item.getUpdatedAt())
+                        .build())
+                .toList();
+
+        List<JobPartUsageResponse> usedParts = job.getPartUsages().stream()
+                .sorted((left, right) -> right.getUsedAt().compareTo(left.getUsedAt()))
+                .map(usage -> JobPartUsageResponse.builder()
+                        .id(usage.getId())
+                        .partId(usage.getPart().getId())
+                        .partCode(usage.getPart().getPartCode())
+                        .partName(usage.getPart().getPartName())
+                        .unit(usage.getPart().getUnit())
+                        .quantityUsed(usage.getQuantityUsed())
+                        .note(usage.getNote())
+                        .usedBy(usage.getUsedBy() != null ? usage.getUsedBy().getUsername() : "system")
+                        .usedAt(usage.getUsedAt())
+                        .build())
+                .toList();
+
         return JobResponse.builder()
                 .id(job.getId())
                 .jobCode(job.getJobCode())
@@ -277,6 +418,8 @@ public class JobService {
                 .createdAt(job.getCreatedAt())
                 .updatedAt(job.getUpdatedAt())
                 .timeline(timeline)
+                .checklist(checklist)
+                .usedParts(usedParts)
                 .build();
     }
 }

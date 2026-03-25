@@ -255,7 +255,7 @@
 const user = JSON.parse(localStorage.getItem('user')); if (!user || !user.token) window.location.href='/login';
 const isAdmin = user.roles.includes('ROLE_ADMIN');
 const authHeaders = { Authorization:'Bearer '+user.token };
-const state = { jobs:[], selected:null, parts:[], previewUrls:[], notifications:[], notificationPanelOpen:false, notificationPoller:null, lookupResult:null, lookupSearchResults:[], scannerInstance:null, scannerRunning:false };
+const state = { jobs:[], selected:null, parts:[], technicians:[], previewUrls:[], notifications:[], notificationPanelOpen:false, notificationPoller:null, lookupResult:null, lookupSearchResults:[], scannerInstance:null, scannerRunning:false };
 const signatureState = { drawing:false, hasStroke:false };
 document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(',');
 if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); }
@@ -268,7 +268,7 @@ function logout(){ cleanupPreviewUrls(); localStorage.removeItem('user'); window
 function formatDateTime(v){ return v ? new Date(v).toLocaleString() : ''; }
 function cleanupPreviewUrls(){ state.previewUrls.forEach(url=>URL.revokeObjectURL(url)); state.previewUrls=[]; }
 
-async function init(){ await loadParts(); await loadJobs(); await loadNotifications(); startNotificationPolling(); }
+async function init(){ await loadTechnicians(); await loadParts(); await loadJobs(); await loadNotifications(); startNotificationPolling(); }
 
 async function loadJobs(){
   try{
@@ -276,6 +276,12 @@ async function loadJobs(){
     const k=document.getElementById('filterKeyword').value.trim(); if(k) params.keyword=k;
     const s=document.getElementById('filterStatus').value; if(s) params.status=s;
     const p=document.getElementById('filterPriority').value; if(p) params.priority=p;
+    
+    // Technician chỉ thấy job được giao cho mình
+    if(!isAdmin && user.id) {
+      params.assignedUserId = user.id;
+    }
+    
     const res=await axios.get('/api/jobs',{headers:authHeaders,params});
     state.jobs=res.data.content||[]; document.getElementById('jobCount').textContent=state.jobs.length;
     renderJobs();
@@ -514,6 +520,38 @@ function renderSelected(){
     <div class="small text-muted mb-2">${j.status} | ${j.assignedUsername||'Unassigned'}</div>
     <div class="small mb-3">${escapeHtml(j.customerName)}<br/>${escapeHtml(j.serviceAddress)}<br/>${escapeHtml(j.description||'')}</div>
 
+    ${isAdmin && (j.status!=='COMPLETED' && j.status!=='CANCELLED') ? `
+    <h6>Assign Technician</h6>
+    <form onsubmit="assignJob(event,${j.id})" class="mb-3">
+      <select id="assignTechId" class="form-select form-select-sm mb-1" required>
+        <option value="">Select technician</option>
+        ${state.technicians.map(t=>`<option value="${t.id}" ${j.assignedUserId===t.id?'selected':''}>${t.username}</option>`).join('')}
+      </select>
+      <input id="assignNote" class="form-control form-control-sm mb-1" placeholder="Assignment note"/>
+      <button class="btn btn-sm btn-warning">Assign Job</button>
+    </form>
+    ` : ''}
+
+    ${!isAdmin && (j.status!=='COMPLETED' && j.status!=='CANCELLED') && j.assignedUserId===user.id ? `
+    <h6>Update Job Status</h6>
+    <div class="mb-3">
+      <div class="small text-muted mb-2">Current: <strong>${j.status}</strong></div>
+      <div class="d-flex gap-2 flex-wrap">
+        ${j.status==='ASSIGNED' ? `
+          <button class="btn btn-sm btn-primary" onclick="updateJobStatus(${j.id},'IN_PROGRESS')">Start Work</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+        ` : ''}
+        ${j.status==='IN_PROGRESS' ? `
+          <button class="btn btn-sm btn-success" onclick="updateJobStatus(${j.id},'COMPLETED')">Complete Job</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+        ` : ''}
+        ${j.status==='CREATED' ? `
+          <button class="btn btn-sm btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+        ` : ''}
+      </div>
+    </div>
+    ` : ''}
+
     <div class="d-flex gap-2 flex-wrap mb-3">
       <button class="btn btn-sm btn-outline-danger" type="button" onclick="downloadReport(${j.id})">Export PDF</button>
     </div>
@@ -667,7 +705,44 @@ async function deleteJob(id){ if(!confirm('Delete job?')) return; try{ await axi
 
 async function addChecklist(e,id){ e.preventDefault(); try{ await axios.post('/api/jobs/'+id+'/checklist',{itemName:checkName.value.trim(),note:checkNote.value.trim()},{headers:authHeaders}); showMessage('Checklist added','success'); await loadJobs(); await selectJob(id);}catch(er){ showMessage(resolveError(er),'danger'); }}
 async function toggleChecklist(jobId,itemId,completed){ try{ await axios.patch('/api/jobs/'+jobId+'/checklist/'+itemId,{completed},{headers:authHeaders}); showMessage('Checklist updated','success'); await loadJobs(); await selectJob(jobId);}catch(er){ showMessage(resolveError(er),'danger'); }}
+
+async function updateJobStatus(id, newStatus) {
+  try {
+    await axios.patch('/api/jobs/'+id+'/status', {status: newStatus}, {headers: authHeaders});
+    showMessage('Status updated to ' + newStatus, 'success');
+    await loadJobs();
+    await selectJob(id);
+  } catch(er) {
+    showMessage(resolveError(er), 'danger');
+  }
+}
+
+async function assignJob(e,id){
+  e.preventDefault(); 
+  try{ 
+    await axios.post('/api/jobs/'+id+'/assign',{
+      technicianId:Number(document.getElementById('assignTechId').value),
+      note:document.getElementById('assignNote').value.trim()
+    },{headers:authHeaders}); 
+    showMessage('Job assigned successfully','success'); 
+    await loadJobs(); 
+    await selectJob(id);
+  }catch(er){ 
+    showMessage(resolveError(er),'danger'); 
+  }
+}
+
 async function usePart(e,id){ e.preventDefault(); try{ await axios.post('/api/jobs/'+id+'/parts-usage',{partId:Number(usePartId.value),quantityUsed:Number(useQty.value),note:useNote.value.trim()},{headers:authHeaders}); showMessage('Part usage recorded','success'); await loadParts(); await loadJobs(); await selectJob(id);}catch(er){ showMessage(resolveError(er),'danger'); }}
+
+async function loadTechnicians(){ 
+  if(!isAdmin) return;
+  try{ 
+    const r=await axios.get('/api/users/technicians',{headers:authHeaders}); 
+    state.technicians=r.data||[]; 
+  }catch(e){ 
+    showMessage(resolveError(e),'danger'); 
+  }
+}
 
 async function loadParts(){ try{ const r=await axios.get('/api/parts',{headers:authHeaders}); state.parts=r.data||[]; renderParts(); }catch(e){ showMessage(resolveError(e),'danger'); }}
 function renderParts(){ const b=document.getElementById('partsList'); if(!b) return; if(!state.parts.length){ b.innerHTML='No parts'; return; }

@@ -4,10 +4,12 @@ import com.cuoiky.Nhom13.model.ERole;
 import com.cuoiky.Nhom13.model.Role;
 import com.cuoiky.Nhom13.repository.RoleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(1)
 public class RoleInitializer implements CommandLineRunner {
 
     @Autowired

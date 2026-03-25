@@ -1,0 +1,282 @@
+package com.cuoiky.Nhom13.service;
+
+import com.cuoiky.Nhom13.dto.JobAssignmentRequest;
+import com.cuoiky.Nhom13.dto.JobActivityResponse;
+import com.cuoiky.Nhom13.dto.JobRequest;
+import com.cuoiky.Nhom13.dto.JobResponse;
+import com.cuoiky.Nhom13.dto.PageResponse;
+import com.cuoiky.Nhom13.model.Assignment;
+import com.cuoiky.Nhom13.model.ERole;
+import com.cuoiky.Nhom13.model.Job;
+import com.cuoiky.Nhom13.model.JobActivity;
+import com.cuoiky.Nhom13.model.JobActivityType;
+import com.cuoiky.Nhom13.model.JobPriority;
+import com.cuoiky.Nhom13.model.JobStatus;
+import com.cuoiky.Nhom13.model.User;
+import com.cuoiky.Nhom13.repository.AssignmentRepository;
+import com.cuoiky.Nhom13.repository.JobActivityRepository;
+import com.cuoiky.Nhom13.repository.JobRepository;
+import com.cuoiky.Nhom13.repository.UserRepository;
+import jakarta.persistence.criteria.Predicate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+@Transactional
+public class JobService {
+    private static final DateTimeFormatter CODE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+
+    private final JobRepository jobRepository;
+    private final AssignmentRepository assignmentRepository;
+    private final JobActivityRepository jobActivityRepository;
+    private final UserRepository userRepository;
+
+    public JobService(JobRepository jobRepository,
+                      AssignmentRepository assignmentRepository,
+                      JobActivityRepository jobActivityRepository,
+                      UserRepository userRepository) {
+        this.jobRepository = jobRepository;
+        this.assignmentRepository = assignmentRepository;
+        this.jobActivityRepository = jobActivityRepository;
+        this.userRepository = userRepository;
+    }
+
+    public JobResponse create(JobRequest request) {
+        Job job = new Job();
+        applyJobRequest(job, request);
+        job.setJobCode(generateJobCode());
+        job.setStatus(JobStatus.CREATED);
+        Job savedJob = jobRepository.save(job);
+        saveActivity(savedJob, JobActivityType.CREATED, null, null, JobStatus.CREATED,
+                "Work order created");
+        return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
+    }
+
+    public JobResponse update(Long id, JobRequest request, String username) {
+        Job job = getJobEntity(id);
+        applyJobRequest(job, request);
+        Job savedJob = jobRepository.save(job);
+        User actor = username != null ? userRepository.findByUsername(username).orElse(null) : null;
+        saveActivity(savedJob, JobActivityType.UPDATED, actor, savedJob.getStatus(), savedJob.getStatus(),
+                "Work order details updated");
+        return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<JobResponse> search(String keyword, JobStatus status, JobPriority priority, Long assignedUserId,
+                                            int page, int size, String sortBy, String sortDir) {
+        Specification<Job> specification = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (StringUtils.hasText(keyword)) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("jobCode")), pattern),
+                        cb.like(cb.lower(root.get("title")), pattern),
+                        cb.like(cb.lower(root.get("customerName")), pattern),
+                        cb.like(cb.lower(root.get("serviceAddress")), pattern)
+                ));
+            }
+
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+
+            if (priority != null) {
+                predicates.add(cb.equal(root.get("priority"), priority));
+            }
+
+            if (assignedUserId != null) {
+                predicates.add(cb.equal(root.get("assignedUser").get("id"), assignedUserId));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+
+        Sort sort = Sort.by(parseSortDirection(sortDir), sanitizeSortBy(sortBy));
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 50), sort);
+        Page<Job> result = jobRepository.findAll(specification, pageable);
+        return PageResponse.<JobResponse>builder()
+                .content(result.getContent().stream().map(this::toResponse).toList())
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .first(result.isFirst())
+                .last(result.isLast())
+                .sortBy(sanitizeSortBy(sortBy))
+                .sortDirection(parseSortDirection(sortDir).name())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public JobResponse getById(Long id) {
+        return toResponse(getJobEntity(id));
+    }
+
+    public JobResponse assign(Long jobId, JobAssignmentRequest request, String assignedByUsername) {
+        Job job = getJobEntity(jobId);
+        JobStatus previousStatus = job.getStatus();
+        if (previousStatus == JobStatus.COMPLETED || previousStatus == JobStatus.CANCELLED) {
+            throw new IllegalArgumentException("Completed or cancelled jobs cannot be reassigned");
+        }
+        User technician = userRepository.findById(request.getTechnicianId())
+                .orElseThrow(() -> new IllegalArgumentException("Technician not found"));
+        User assignedBy = userRepository.findByUsername(assignedByUsername)
+                .orElseThrow(() -> new IllegalArgumentException("Assigned by user not found"));
+
+        boolean canReceiveJobs = technician.getRoles().stream()
+                .anyMatch(role -> role.getName() == ERole.ROLE_USER || role.getName() == ERole.ROLE_ADMIN);
+        if (!canReceiveJobs) {
+            throw new IllegalArgumentException("Selected user cannot be assigned to a job");
+        }
+
+        job.setAssignedUser(technician);
+        if (job.getStatus() == JobStatus.CREATED) {
+            job.setStatus(JobStatus.ASSIGNED);
+        }
+
+        Assignment assignment = new Assignment();
+        assignment.setJob(job);
+        assignment.setTechnician(technician);
+        assignment.setAssignedBy(assignedBy);
+        assignment.setNote(request.getNote());
+        assignmentRepository.save(assignment);
+
+        Job savedJob = jobRepository.save(job);
+        saveActivity(savedJob, JobActivityType.ASSIGNED, assignedBy, previousStatus, savedJob.getStatus(),
+                "Assigned to " + technician.getUsername());
+        return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
+    }
+
+    public JobResponse updateStatus(Long jobId, JobStatus status, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            if (job.getAssignedUser() == null || !job.getAssignedUser().getUsername().equals(username)) {
+                throw new AccessDeniedException("You can only update status for your assigned jobs");
+            }
+        }
+        validateStatusTransition(job.getStatus(), status, job.getAssignedUser() != null);
+        User actor = userRepository.findByUsername(username).orElse(null);
+        JobStatus previousStatus = job.getStatus();
+        job.setStatus(status);
+        Job savedJob = jobRepository.save(job);
+        saveActivity(savedJob, JobActivityType.STATUS_CHANGED, actor, previousStatus, status,
+                "Status changed from " + previousStatus + " to " + status);
+        return toResponse(jobRepository.findById(savedJob.getId()).orElseThrow());
+    }
+
+    public void delete(Long id) {
+        Job job = getJobEntity(id);
+        jobRepository.delete(job);
+    }
+
+    private void applyJobRequest(Job job, JobRequest request) {
+        job.setTitle(request.getTitle());
+        job.setDescription(request.getDescription());
+        job.setCustomerName(request.getCustomerName());
+        job.setServiceAddress(request.getServiceAddress());
+        job.setScheduledDate(request.getScheduledDate());
+        job.setPriority(request.getPriority());
+    }
+
+    private Job getJobEntity(Long id) {
+        return jobRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Job not found with id " + id));
+    }
+
+    private String generateJobCode() {
+        return "JOB-" + LocalDateTime.now().format(CODE_FORMATTER);
+    }
+
+    private void validateStatusTransition(JobStatus currentStatus, JobStatus newStatus, boolean hasAssignee) {
+        if (currentStatus == newStatus) {
+            return;
+        }
+        switch (currentStatus) {
+            case CREATED -> {
+                if (newStatus != JobStatus.ASSIGNED && newStatus != JobStatus.CANCELLED) {
+                    throw new IllegalArgumentException("CREATED jobs can only move to ASSIGNED or CANCELLED");
+                }
+                if (newStatus == JobStatus.ASSIGNED && !hasAssignee) {
+                    throw new IllegalArgumentException("Job must be assigned before moving to ASSIGNED");
+                }
+            }
+            case ASSIGNED -> {
+                if (newStatus != JobStatus.IN_PROGRESS && newStatus != JobStatus.CANCELLED) {
+                    throw new IllegalArgumentException("ASSIGNED jobs can only move to IN_PROGRESS or CANCELLED");
+                }
+            }
+            case IN_PROGRESS -> {
+                if (newStatus != JobStatus.COMPLETED && newStatus != JobStatus.CANCELLED) {
+                    throw new IllegalArgumentException("IN_PROGRESS jobs can only move to COMPLETED or CANCELLED");
+                }
+            }
+            case COMPLETED, CANCELLED -> throw new IllegalArgumentException("Completed or cancelled jobs cannot change status");
+        }
+    }
+
+    private Sort.Direction parseSortDirection(String sortDir) {
+        return "ASC".equalsIgnoreCase(sortDir) ? Sort.Direction.ASC : Sort.Direction.DESC;
+    }
+
+    private String sanitizeSortBy(String sortBy) {
+        List<String> allowed = List.of("createdAt", "scheduledDate", "priority", "status", "title", "jobCode");
+        return allowed.contains(sortBy) ? sortBy : "createdAt";
+    }
+
+    private void saveActivity(Job job, JobActivityType type, User actor, JobStatus fromStatus, JobStatus toStatus, String message) {
+        JobActivity activity = new JobActivity();
+        activity.setJob(job);
+        activity.setActivityType(type);
+        activity.setPerformedBy(actor);
+        activity.setFromStatus(fromStatus);
+        activity.setToStatus(toStatus);
+        activity.setMessage(message);
+        jobActivityRepository.save(activity);
+    }
+
+    private JobResponse toResponse(Job job) {
+        User assignedUser = job.getAssignedUser();
+        List<JobActivityResponse> timeline = job.getActivities().stream()
+                .sorted((left, right) -> right.getCreatedAt().compareTo(left.getCreatedAt()))
+                .map(activity -> JobActivityResponse.builder()
+                        .id(activity.getId())
+                        .activityType(activity.getActivityType())
+                        .performedBy(activity.getPerformedBy() != null ? activity.getPerformedBy().getUsername() : "system")
+                        .fromStatus(activity.getFromStatus())
+                        .toStatus(activity.getToStatus())
+                        .message(activity.getMessage())
+                        .createdAt(activity.getCreatedAt())
+                        .build())
+                .toList();
+        return JobResponse.builder()
+                .id(job.getId())
+                .jobCode(job.getJobCode())
+                .title(job.getTitle())
+                .description(job.getDescription())
+                .customerName(job.getCustomerName())
+                .serviceAddress(job.getServiceAddress())
+                .scheduledDate(job.getScheduledDate())
+                .status(job.getStatus())
+                .priority(job.getPriority())
+                .assignedUserId(assignedUser != null ? assignedUser.getId() : null)
+                .assignedUsername(assignedUser != null ? assignedUser.getUsername() : null)
+                .createdAt(job.getCreatedAt())
+                .updatedAt(job.getUpdatedAt())
+                .timeline(timeline)
+                .build();
+    }
+}

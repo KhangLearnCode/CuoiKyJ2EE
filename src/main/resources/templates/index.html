@@ -1,7 +1,9 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="vi" xmlns:th="http://www.thymeleaf.org">
 <head>
-    <title>Trang chủ - Nhóm 13</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FSM Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
@@ -9,78 +11,79 @@
     </style>
 </head>
 <body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="/">Nhóm 13 - Hệ thống xác thực</a>
-            <div class="navbar-nav ms-auto">
-                <span id="user-info" class="nav-link text-white me-3 hidden"></span>
-                <a id="btn-login" class="btn btn-outline-light me-2" href="/login">Đăng nhập</a>
-                <a id="btn-register" class="btn btn-primary" href="/register">Đăng ký</a>
-                <button id="btn-logout" class="btn btn-danger hidden" onclick="logout()">Đăng xuất</button>
-            </div>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">Field Service Management</a>
+        <div class="navbar-nav ms-auto align-items-center">
+            <span id="user-info" class="nav-link text-white me-3 hidden"></span>
+            <a id="btn-login" class="btn btn-outline-light me-2" href="/login">Đăng nhập</a>
+            <a id="btn-register" class="btn btn-primary me-2" href="/register">Đăng ký</a>
+            <a id="btn-jobs" class="btn btn-warning me-2 hidden" href="/jobs">Quản lý Job</a>
+            <button id="btn-logout" class="btn btn-danger hidden" onclick="logout()">Đăng xuất</button>
         </div>
-    </nav>
+    </div>
+</nav>
 
-    <div class="container mt-5">
-        <div class="row justify-content-center">
-            <div class="col-md-8 text-center">
-                <h1 class="mb-4">Chào mừng đến với Hệ thống Nhóm 13</h1>
-                <div class="card p-4 shadow">
-                    <h3>Kiểm tra quyền truy cập</h3>
-                    <div class="mt-4">
-                        <button class="btn btn-secondary m-2" onclick="testAccess('/api/test/all')">Nội dung công khai</button>
-                        <button class="btn btn-info m-2" onclick="testAccess('/api/test/user')">Nội dung Người dùng</button>
-                        <button class="btn btn-warning m-2" onclick="testAccess('/api/test/admin')">Nội dung Quản trị viên</button>
-                    </div>
-                    <div id="result" class="mt-4 p-3 border rounded bg-white" style="min-height: 50px;">
-                        Kết quả sẽ hiển thị ở đây...
+<div class="container mt-5">
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-body p-4">
+                    <h1 class="mb-3">FSM Job Dispatch</h1>
+                    <p class="lead">Quản lý tạo công việc, phân công kỹ thuật viên, cập nhật work order và theo dõi trạng thái xử lý trên cùng một luồng.</p>
+                    <div class="d-flex gap-2 flex-wrap mt-4">
+                        <a class="btn btn-primary" href="/jobs">Mở màn hình Job</a>
+                        <button class="btn btn-outline-secondary" onclick="testAccess('/api/test/user')">Kiểm tra quyền user</button>
+                        <button class="btn btn-outline-dark" onclick="testAccess('/api/test/admin')">Kiểm tra quyền admin</button>
                     </div>
                 </div>
             </div>
         </div>
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-header">Kết quả API</div>
+                <div id="result" class="card-body">
+                    Sẵn sàng kiểm tra xác thực và truy cập API.
+                </div>
+            </div>
+        </div>
     </div>
+</div>
 
-    <script>
-        // Kiểm tra xem đã đăng nhập chưa
-        const user = JSON.parse(localStorage.getItem('user'));
+<script>
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user && user.token) {
+        document.getElementById('user-info').textContent = 'Xin chào, ' + user.username + ' (' + user.roles.join(', ') + ')';
+        document.getElementById('user-info').classList.remove('hidden');
+        document.getElementById('btn-login').classList.add('hidden');
+        document.getElementById('btn-register').classList.add('hidden');
+        document.getElementById('btn-jobs').classList.remove('hidden');
+        document.getElementById('btn-logout').classList.remove('hidden');
+    }
+
+    function logout() {
+        localStorage.removeItem('user');
+        window.location.reload();
+    }
+
+    async function testAccess(url) {
+        const resultDiv = document.getElementById('result');
+        resultDiv.textContent = 'Đang tải...';
+
+        const headers = {};
         if (user && user.token) {
-            document.getElementById('user-info').textContent = 'Chào, ' + user.username + ' (' + user.roles.join(', ') + ')';
-            document.getElementById('user-info').classList.remove('hidden');
-            document.getElementById('btn-login').classList.add('hidden');
-            document.getElementById('btn-register').classList.add('hidden');
-            document.getElementById('btn-logout').classList.remove('hidden');
+            headers['Authorization'] = 'Bearer ' + user.token;
         }
 
-        function logout() {
-            localStorage.removeItem('user');
-            window.location.reload();
+        try {
+            const response = await axios.get(url, { headers });
+            resultDiv.className = 'card-body text-bg-success';
+            resultDiv.textContent = response.data;
+        } catch (error) {
+            resultDiv.className = 'card-body text-bg-danger';
+            resultDiv.textContent = error.response?.data?.message || error.message;
         }
-
-        async function testAccess(url) {
-            const resultDiv = document.getElementById('result');
-            resultDiv.textContent = 'Đang tải...';
-            
-            const user = JSON.parse(localStorage.getItem('user'));
-            const headers = {};
-            if (user && user.token) {
-                headers['Authorization'] = 'Bearer ' + user.token;
-            }
-
-            try {
-                const response = await axios.get(url, { headers });
-                resultDiv.className = 'mt-4 p-3 border rounded bg-success text-white';
-                resultDiv.textContent = response.data;
-            } catch (error) {
-                resultDiv.className = 'mt-4 p-3 border rounded bg-danger text-white';
-                if (error.response && error.response.status === 401) {
-                    resultDiv.textContent = 'Lỗi 401: Bạn chưa đăng nhập hoặc không có quyền!';
-                } else if (error.response && error.response.status === 403) {
-                    resultDiv.textContent = 'Lỗi 403: Bạn không có quyền truy cập trang này!';
-                } else {
-                    resultDiv.textContent = 'Lỗi: ' + (error.response ? error.response.data.message : error.message);
-                }
-            }
-        }
-    </script>
+    }
+</script>
 </body>
 </html>

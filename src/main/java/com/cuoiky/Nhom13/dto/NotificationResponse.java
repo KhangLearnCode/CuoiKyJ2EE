@@ -15,6 +15,7 @@ public class NotificationResponse {
     private String title;
     private String message;
     private Long jobId;
+    private Long partId;
     private JobStatus jobStatus;
     private boolean read;
     private LocalDateTime createdAt;

@@ -5,11 +5,14 @@ import com.cuoiky.Nhom13.dto.ChecklistItemResponse;
 import com.cuoiky.Nhom13.dto.ChecklistItemUpdateRequest;
 import com.cuoiky.Nhom13.dto.JobAssignmentRequest;
 import com.cuoiky.Nhom13.dto.JobActivityResponse;
+import com.cuoiky.Nhom13.dto.JobExportResult;
+import com.cuoiky.Nhom13.dto.JobImportResult;
 import com.cuoiky.Nhom13.dto.JobPartUsageRequest;
 import com.cuoiky.Nhom13.dto.JobPartUsageResponse;
 import com.cuoiky.Nhom13.dto.JobRequest;
 import com.cuoiky.Nhom13.dto.JobImageResponse;
 import com.cuoiky.Nhom13.dto.JobResponse;
+import com.cuoiky.Nhom13.dto.JobStatsResponse;
 import com.cuoiky.Nhom13.dto.PageResponse;
 import com.cuoiky.Nhom13.model.Assignment;
 import com.cuoiky.Nhom13.model.ERole;
@@ -43,11 +46,26 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Transactional
@@ -115,34 +133,7 @@ public class JobService {
     @Transactional(readOnly = true)
     public PageResponse<JobResponse> search(String keyword, JobStatus status, JobPriority priority, Long assignedUserId,
                                             int page, int size, String sortBy, String sortDir) {
-        Specification<Job> specification = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-
-            if (StringUtils.hasText(keyword)) {
-                String pattern = "%" + keyword.trim().toLowerCase() + "%";
-                predicates.add(cb.or(
-                        cb.like(cb.lower(root.get("jobCode")), pattern),
-                        cb.like(cb.lower(root.get("title")), pattern),
-                        cb.like(cb.lower(root.get("customerName")), pattern),
-                        cb.like(cb.lower(root.get("serviceAddress")), pattern)
-                ));
-            }
-
-            if (status != null) {
-                predicates.add(cb.equal(root.get("status"), status));
-            }
-
-            if (priority != null) {
-                predicates.add(cb.equal(root.get("priority"), priority));
-            }
-
-            if (assignedUserId != null) {
-                predicates.add(cb.equal(root.get("assignedUser").get("id"), assignedUserId));
-            }
-
-            return cb.and(predicates.toArray(Predicate[]::new));
-        };
-
+        Specification<Job> specification = buildSpecification(keyword, status, priority, assignedUserId);
         Sort sort = Sort.by(parseSortDirection(sortDir), sanitizeSortBy(sortBy));
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 50), sort);
         Page<Job> result = jobRepository.findAll(specification, pageable);
@@ -162,6 +153,96 @@ public class JobService {
     @Transactional(readOnly = true)
     public JobResponse getById(Long id) {
         return toResponse(getJobEntity(id));
+    }
+
+    @Transactional(readOnly = true)
+    public JobExportResult exportJobs(String format,
+                                      String keyword,
+                                      JobStatus status,
+                                      JobPriority priority,
+                                      Long assignedUserId,
+                                      String sortBy,
+                                      String sortDir) {
+        List<Job> jobs = jobRepository.findAll(
+                buildSpecification(keyword, status, priority, assignedUserId),
+                Sort.by(parseSortDirection(sortDir), sanitizeSortBy(sortBy)));
+        if ("xlsx".equalsIgnoreCase(format)) {
+            return exportXlsx(jobs);
+        }
+        return exportCsv(jobs);
+    }
+
+    public JobImportResult importJobsFromCsv(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("CSV file is required");
+        }
+        int imported = 0;
+        int totalRows = 0;
+        List<String> errors = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            int lineNumber = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                if (lineNumber == 1 && line.toLowerCase().contains("title") && line.toLowerCase().contains("customer")) {
+                    continue; // header
+                }
+                if (!StringUtils.hasText(line)) {
+                    continue;
+                }
+                totalRows++;
+                String[] columns = line.split(",", -1);
+                try {
+                    if (columns.length < 5) {
+                        throw new IllegalArgumentException("Expected at least 5 columns: title, customerName, serviceAddress, scheduledDate(yyyy-MM-dd), priority[,description]");
+                    }
+                    JobRequest request = new JobRequest();
+                    request.setTitle(columns[0].trim());
+                    request.setCustomerName(columns[1].trim());
+                    request.setServiceAddress(columns[2].trim());
+                    request.setScheduledDate(parseDate(columns[3]));
+                    request.setPriority(parsePriority(columns[4]));
+                    if (columns.length >= 6) {
+                        request.setDescription(columns[5].trim());
+                    }
+                    create(request);
+                    imported++;
+                } catch (Exception ex) {
+                    errors.add("Row " + lineNumber + ": " + ex.getMessage());
+                }
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to read CSV file", ex);
+        }
+        int failed = Math.max(0, totalRows - imported);
+        return JobImportResult.builder()
+                .totalRows(totalRows)
+                .imported(imported)
+                .failed(failed)
+                .errors(errors)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public JobStatsResponse stats(Long assignedUserId) {
+        List<Job> jobs = jobRepository.findAll(buildSpecification(null, null, null, assignedUserId));
+        Map<JobStatus, Long> byStatus = new EnumMap<>(JobStatus.class);
+        Map<JobPriority, Long> byPriority = new EnumMap<>(JobPriority.class);
+        for (JobStatus value : JobStatus.values()) {
+            byStatus.put(value, 0L);
+        }
+        for (JobPriority value : JobPriority.values()) {
+            byPriority.put(value, 0L);
+        }
+        for (Job job : jobs) {
+            byStatus.computeIfPresent(job.getStatus(), (k, v) -> v + 1);
+            byPriority.computeIfPresent(job.getPriority(), (k, v) -> v + 1);
+        }
+        return JobStatsResponse.builder()
+                .total(jobs.size())
+                .byStatus(byStatus)
+                .byPriority(byPriority)
+                .build();
     }
 
     public JobResponse assign(Long jobId, JobAssignmentRequest request, String assignedByUsername) {
@@ -393,6 +474,130 @@ public class JobService {
         saveActivity(job, JobActivityType.REPORT_EXPORTED, actor, job.getStatus(), job.getStatus(),
                 "PDF report exported");
         return report;
+    }
+
+    private JobExportResult exportCsv(List<Job> jobs) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Job Code,Title,Customer,Address,Scheduled Date,Status,Priority,Assigned User,Created At\n");
+        for (Job job : jobs) {
+            builder.append(safeCsv(job.getJobCode())).append(',')
+                    .append(safeCsv(job.getTitle())).append(',')
+                    .append(safeCsv(job.getCustomerName())).append(',')
+                    .append(safeCsv(job.getServiceAddress())).append(',')
+                    .append(safeCsv(job.getScheduledDate() != null ? job.getScheduledDate().toString() : ""))
+                    .append(',')
+                    .append(safeCsv(job.getStatus().name())).append(',')
+                    .append(safeCsv(job.getPriority().name())).append(',')
+                    .append(safeCsv(job.getAssignedUser() != null ? job.getAssignedUser().getUsername() : ""))
+                    .append(',')
+                    .append(safeCsv(job.getCreatedAt() != null ? job.getCreatedAt().toString() : ""))
+                    .append('\n');
+        }
+        return JobExportResult.builder()
+                .content(builder.toString().getBytes(StandardCharsets.UTF_8))
+                .filename("jobs-" + System.currentTimeMillis() + ".csv")
+                .contentType("text/csv")
+                .build();
+    }
+
+    private JobExportResult exportXlsx(List<Job> jobs) {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Jobs");
+            String[] headers = new String[]{"Job Code", "Title", "Customer", "Address", "Scheduled Date", "Status", "Priority", "Assigned User", "Created At"};
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+            }
+            int rowIndex = 1;
+            for (Job job : jobs) {
+                Row row = sheet.createRow(rowIndex++);
+                row.createCell(0).setCellValue(job.getJobCode());
+                row.createCell(1).setCellValue(defaultString(job.getTitle()));
+                row.createCell(2).setCellValue(defaultString(job.getCustomerName()));
+                row.createCell(3).setCellValue(defaultString(job.getServiceAddress()));
+                row.createCell(4).setCellValue(job.getScheduledDate() != null ? job.getScheduledDate().toString() : "");
+                row.createCell(5).setCellValue(job.getStatus().name());
+                row.createCell(6).setCellValue(job.getPriority().name());
+                row.createCell(7).setCellValue(job.getAssignedUser() != null ? job.getAssignedUser().getUsername() : "");
+                row.createCell(8).setCellValue(job.getCreatedAt() != null ? job.getCreatedAt().toString() : "");
+            }
+            for (int i = 0; i < headers.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+            workbook.write(outputStream);
+            return JobExportResult.builder()
+                    .content(outputStream.toByteArray())
+                    .filename("jobs-" + System.currentTimeMillis() + ".xlsx")
+                    .contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    .build();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to export jobs", ex);
+        }
+    }
+
+    private Specification<Job> buildSpecification(String keyword, JobStatus status, JobPriority priority, Long assignedUserId) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (StringUtils.hasText(keyword)) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("jobCode")), pattern),
+                        cb.like(cb.lower(root.get("title")), pattern),
+                        cb.like(cb.lower(root.get("customerName")), pattern),
+                        cb.like(cb.lower(root.get("serviceAddress")), pattern)
+                ));
+            }
+
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+
+            if (priority != null) {
+                predicates.add(cb.equal(root.get("priority"), priority));
+            }
+
+            if (assignedUserId != null) {
+                predicates.add(cb.equal(root.get("assignedUser").get("id"), assignedUserId));
+            }
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private LocalDate parseDate(String value) {
+        if (!StringUtils.hasText(value)) {
+            return LocalDate.now();
+        }
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid scheduledDate: " + value);
+        }
+    }
+
+    private JobPriority parsePriority(String value) {
+        if (!StringUtils.hasText(value)) {
+            return JobPriority.MEDIUM;
+        }
+        try {
+            return JobPriority.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid priority: " + value);
+        }
+    }
+
+    private String safeCsv(String value) {
+        if (value == null) {
+            return "\"\"";
+        }
+        String escaped = value.replace("\"", "\"\"");
+        return "\"" + escaped + "\"";
+    }
+
+    private String defaultString(String value) {
+        return value != null ? value : "";
     }
 
     private void applyJobRequest(Job job, JobRequest request) {

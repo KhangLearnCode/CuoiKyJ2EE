@@ -325,6 +325,9 @@ Các chức năng này không phải 3 demo chính nhưng rất hữu ích khi t
 - **Electronic Signature**: lưu chữ ký khách hàng
 - **Export PDF**: xuất báo cáo job
 - **Notifications**: xem thông báo và đánh dấu đã đọc
+- **Export/Import**: xuất danh sách job CSV/XLSX, import job từ CSV
+- **Dashboard Stats**: thống kê số lượng theo trạng thái/priority trên landing và workspace
+- **Low Stock Alerts**: cảnh báo tồn kho thấp cho admin
 
 ---
 

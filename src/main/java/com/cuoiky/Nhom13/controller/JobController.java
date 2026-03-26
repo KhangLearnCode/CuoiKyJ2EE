@@ -1,8 +1,11 @@
 package com.cuoiky.Nhom13.controller;
 
 import com.cuoiky.Nhom13.dto.JobAssignmentRequest;
+import com.cuoiky.Nhom13.dto.JobExportResult;
+import com.cuoiky.Nhom13.dto.JobImportResult;
 import com.cuoiky.Nhom13.dto.JobRequest;
 import com.cuoiky.Nhom13.dto.JobResponse;
+import com.cuoiky.Nhom13.dto.JobStatsResponse;
 import com.cuoiky.Nhom13.dto.JobStatusUpdateRequest;
 import com.cuoiky.Nhom13.dto.PageResponse;
 import com.cuoiky.Nhom13.model.JobPriority;
@@ -10,6 +13,7 @@ import com.cuoiky.Nhom13.model.JobStatus;
 import com.cuoiky.Nhom13.security.UserDetailsImpl;
 import com.cuoiky.Nhom13.service.JobService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -24,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
@@ -47,6 +52,41 @@ public class JobController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "DESC") String sortDir) {
         return ResponseEntity.ok(jobService.search(keyword, status, priority, assignedUserId, page, size, sortBy, sortDir));
+    }
+
+    @GetMapping("/export")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<byte[]> exportJobs(
+            @RequestParam(defaultValue = "csv") String format,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) JobStatus status,
+            @RequestParam(required = false) JobPriority priority,
+            @RequestParam(required = false) Long assignedUserId,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "DESC") String sortDir) {
+        JobExportResult result = jobService.exportJobs(format, keyword, status, priority, assignedUserId, sortBy, sortDir);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + result.getFilename() + "\"")
+                .header(HttpHeaders.CONTENT_TYPE, result.getContentType())
+                .body(result.getContent());
+    }
+
+    @PostMapping("/import")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<JobImportResult> importJobs(@RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(jobService.importJobsFromCsv(file));
+    }
+
+    @GetMapping("/stats")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<JobStatsResponse> stats(
+            @RequestParam(required = false) Long assignedUserId,
+            Authentication authentication) {
+        UserDetailsImpl currentUser = (UserDetailsImpl) authentication.getPrincipal();
+        boolean isAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        Long effectiveAssignedUserId = isAdmin ? assignedUserId : currentUser.getId();
+        return ResponseEntity.ok(jobService.stats(effectiveAssignedUserId));
     }
 
     @GetMapping("/{id}")

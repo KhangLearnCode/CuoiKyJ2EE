@@ -7,10 +7,12 @@ import com.cuoiky.Nhom13.model.JobStatus;
 import com.cuoiky.Nhom13.model.JobStatusSyncState;
 import com.cuoiky.Nhom13.model.Notification;
 import com.cuoiky.Nhom13.model.NotificationType;
+import com.cuoiky.Nhom13.model.Part;
 import com.cuoiky.Nhom13.model.User;
 import com.cuoiky.Nhom13.repository.JobRepository;
 import com.cuoiky.Nhom13.repository.JobStatusSyncStateRepository;
 import com.cuoiky.Nhom13.repository.NotificationRepository;
+import com.cuoiky.Nhom13.repository.PartRepository;
 import com.cuoiky.Nhom13.repository.UserRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -28,15 +30,21 @@ public class NotificationService {
     private final UserRepository userRepository;
     private final JobRepository jobRepository;
     private final JobStatusSyncStateRepository jobStatusSyncStateRepository;
+    private final PartRepository partRepository;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     public NotificationService(NotificationRepository notificationRepository,
                                UserRepository userRepository,
                                JobRepository jobRepository,
-                               JobStatusSyncStateRepository jobStatusSyncStateRepository) {
+                               JobStatusSyncStateRepository jobStatusSyncStateRepository,
+                               PartRepository partRepository,
+                               org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
         this.jobRepository = jobRepository;
         this.jobStatusSyncStateRepository = jobStatusSyncStateRepository;
+        this.partRepository = partRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
     public void notifyJobCreated(Job job) {
@@ -45,6 +53,7 @@ public class NotificationService {
                 "Job moi: " + job.getJobCode(),
                 job.getTitle() + " - " + job.getCustomerName(),
                 job.getId(),
+                null,
                 null);
         recordCurrentStatus(job, true);
     }
@@ -55,7 +64,8 @@ public class NotificationService {
                 "Job cap nhat trang thai: " + job.getJobCode(),
                 job.getTitle() + " da chuyen sang " + job.getStatus(),
                 job.getId(),
-                job.getStatus());
+                job.getStatus(),
+                null);
         recordCurrentStatus(job, true);
     }
 
@@ -77,6 +87,30 @@ public class NotificationService {
                 notifyJobStatusChanged(job);
             }
         }
+    }
+
+    @Scheduled(fixedDelayString = "${app.notifications.low-stock-ms:60000}")
+    public void scanLowStockLevels() {
+        partRepository.findAll().forEach(this::notifyLowStockIfNeeded);
+    }
+
+    public void notifyLowStockIfNeeded(Part part) {
+        if (part == null) {
+            return;
+        }
+        if (part.getStockQuantity() == null || part.getMinimumStockLevel() == null) {
+            return;
+        }
+        if (part.getStockQuantity() > part.getMinimumStockLevel()) {
+            return;
+        }
+        List<User> recipients = userRepository.findDistinctByRoles_NameOrderByUsernameAsc(ERole.ROLE_ADMIN);
+        saveNotifications(recipients, NotificationType.LOW_STOCK,
+                "Ton kho thap: " + part.getPartCode(),
+                part.getPartName() + " chi con " + part.getStockQuantity() + " (min " + part.getMinimumStockLevel() + ")",
+                null,
+                null,
+                part.getId());
     }
 
     @Transactional(readOnly = true)
@@ -116,12 +150,18 @@ public class NotificationService {
                                    String title,
                                    String message,
                                    Long jobId,
-                                   JobStatus jobStatus) {
+                                   JobStatus jobStatus,
+                                   Long partId) {
         if (recipients.isEmpty()) {
             return;
         }
         List<Notification> notifications = recipients.stream()
-                .filter(recipient -> !notificationRepository.existsByRecipient_IdAndJobIdAndTypeAndJobStatus(recipient.getId(), jobId, type, jobStatus))
+                .filter(recipient -> {
+                    if (partId != null) {
+                        return !notificationRepository.existsByRecipient_IdAndTypeAndPartId(recipient.getId(), type, partId);
+                    }
+                    return !notificationRepository.existsByRecipient_IdAndJobIdAndTypeAndJobStatus(recipient.getId(), jobId, type, jobStatus);
+                })
                 .map(recipient -> {
                     Notification notification = new Notification();
                     notification.setRecipient(recipient);
@@ -129,6 +169,7 @@ public class NotificationService {
                     notification.setTitle(title);
                     notification.setMessage(message);
                     notification.setJobId(jobId);
+                    notification.setPartId(partId);
                     notification.setJobStatus(jobStatus);
                     notification.setRead(false);
                     return notification;
@@ -137,7 +178,17 @@ public class NotificationService {
         if (notifications.isEmpty()) {
             return;
         }
-        notificationRepository.saveAll(notifications);
+        List<Notification> saved = notificationRepository.saveAll(notifications);
+        // publish via websocket to recipients
+        for (Notification n : saved) {
+            try {
+                NotificationResponse resp = toResponse(n);
+                String dest = "/topic/notifications/" + n.getRecipient().getUsername();
+                messagingTemplate.convertAndSend(dest, resp);
+            } catch (Exception ex) {
+                // swallow to not break main flow
+            }
+        }
     }
 
     private void recordCurrentStatus(Job job, boolean initialized) {
@@ -156,6 +207,7 @@ public class NotificationService {
                 .title(notification.getTitle())
                 .message(notification.getMessage())
                 .jobId(notification.getJobId())
+                .partId(notification.getPartId())
                 .jobStatus(notification.getJobStatus())
                 .read(notification.isRead())
                 .createdAt(notification.getCreatedAt())

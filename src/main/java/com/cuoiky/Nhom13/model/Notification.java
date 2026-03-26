@@ -45,6 +45,9 @@ public class Notification {
     @Column(nullable = false)
     private Long jobId;
 
+    @Column
+    private Long partId;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 30)
     private JobStatus jobStatus;

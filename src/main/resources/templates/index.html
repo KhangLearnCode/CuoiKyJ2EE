@@ -165,14 +165,14 @@
                 <div class="row g-3">
                     <div class="col-6">
                         <div class="stat-tile h-100">
-                            <div class="stat-value">Jobs</div>
-                            <div class="muted-copy small mt-2">Centralized work order tracking with assignment and lifecycle management.</div>
+                            <div class="stat-value" id="homeStatTotal">--</div>
+                            <div class="muted-copy small mt-2">Total jobs (live)</div>
                         </div>
                     </div>
                     <div class="col-6">
                         <div class="stat-tile h-100">
-                            <div class="stat-value">Parts</div>
-                            <div class="muted-copy small mt-2">Warehouse lookup from QR or barcode with stock visibility in the field.</div>
+                            <div class="stat-value" id="homeStatInProgress">--</div>
+                            <div class="muted-copy small mt-2">In-progress / urgent jobs</div>
                         </div>
                     </div>
                     <div class="col-12">
@@ -226,6 +226,7 @@
         document.getElementById('btn-register').classList.add('hidden');
         document.getElementById('btn-jobs').classList.remove('hidden');
         document.getElementById('btn-logout').classList.remove('hidden');
+        loadHomeStats();
     }
 
     function logout() {
@@ -253,6 +254,23 @@
             resultDiv.textContent = error.response?.data?.message || error.message;
             resultDiv.style.color = '#b42318';
             resultDiv.style.borderStyle = 'solid';
+        }
+    }
+
+    async function loadHomeStats() {
+        if (!user || !user.token) return;
+        try {
+            const res = await axios.get('/api/jobs/stats', { headers: { Authorization: 'Bearer ' + user.token } });
+            const stats = res.data || {};
+            document.getElementById('homeStatTotal').textContent = stats.total ?? '--';
+            const byStatus = stats.byStatus || {};
+            const byPriority = stats.byPriority || {};
+            const inProgress = byStatus.IN_PROGRESS ?? 0;
+            const urgent = byPriority.URGENT ?? 0;
+            document.getElementById('homeStatInProgress').textContent = inProgress + ' / ' + urgent + ' urgent';
+        } catch (e) {
+            document.getElementById('homeStatTotal').textContent = '--';
+            document.getElementById('homeStatInProgress').textContent = '--';
         }
     }
 </script>

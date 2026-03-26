@@ -11,6 +11,8 @@
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
   <style>
     :root {
       --bg: #f6f0e6;
@@ -159,6 +161,22 @@
 
   <div class="row g-4">
     <div class="col-lg-4">
+      <div class="card mb-3 glass-card">
+        <div class="card-header">Workspace Stats</div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between small mb-2"><span>Total jobs</span><span id="statTotal">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Created</span><span id="statCreated">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Assigned</span><span id="statAssigned">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>In progress</span><span id="statInProgress">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Completed</span><span id="statCompleted">0</span></div>
+          <hr/>
+          <div class="d-flex justify-content-between small mb-2"><span>Urgent</span><span id="statUrgent">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>High</span><span id="statHigh">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Medium</span><span id="statMedium">0</span></div>
+          <div class="d-flex justify-content-between small"><span>Low</span><span id="statLow">0</span></div>
+        </div>
+      </div>
+
       <div class="card mb-3" id="jobFormCard">
         <div class="card-header">Job Form (Admin)</div>
         <div class="card-body">
@@ -185,6 +203,26 @@
           <select class="form-select mb-2" id="filterStatus"><option value="">ALL</option><option>CREATED</option><option>ASSIGNED</option><option>IN_PROGRESS</option><option>COMPLETED</option><option>CANCELLED</option></select>
           <select class="form-select mb-2" id="filterPriority"><option value="">ALL</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select>
           <button class="btn btn-dark btn-sm" onclick="loadJobs()" type="button">Load Jobs</button>
+        </div>
+      </div>
+
+      <div class="card mb-3 glass-card" id="dataToolsCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Data Tools</span>
+          <div class="badge text-bg-light">Admin</div>
+        </div>
+        <div class="card-body">
+          <div class="d-flex gap-2 mb-2">
+            <button class="btn btn-sm btn-outline-dark" type="button" onclick="exportJobs('csv')">Export CSV</button>
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="exportJobs('xlsx')">Export Excel</button>
+          </div>
+          <div class="small text-muted mb-3">Sử dụng bộ lọc hiện tại cho file xuất.</div>
+          <div class="border rounded p-2">
+            <label class="form-label small fw-semibold">Import jobs (CSV)</label>
+            <input type="file" accept=".csv" class="form-control form-control-sm mb-2" id="importFile"/>
+            <button class="btn btn-sm btn-success" type="button" onclick="importJobs()">Upload & Import</button>
+            <div class="small text-muted mt-2">Cột: title,customerName,serviceAddress,scheduledDate(yyyy-MM-dd),priority[,description]</div>
+          </div>
         </div>
       </div>
 
@@ -258,7 +296,7 @@ const authHeaders = { Authorization:'Bearer '+user.token };
 const state = { jobs:[], selected:null, parts:[], technicians:[], previewUrls:[], notifications:[], notificationPanelOpen:false, notificationPoller:null, lookupResult:null, lookupSearchResults:[], scannerInstance:null, scannerRunning:false };
 const signatureState = { drawing:false, hasStroke:false };
 document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(',');
-if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); }
+if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); document.getElementById('dataToolsCard').classList.add('d-none'); }
 document.getElementById('jobForm').addEventListener('submit', submitJob);
 document.getElementById('partForm').addEventListener('submit', submitPart);
 
@@ -268,20 +306,54 @@ function logout(){ cleanupPreviewUrls(); localStorage.removeItem('user'); window
 function formatDateTime(v){ return v ? new Date(v).toLocaleString() : ''; }
 function cleanupPreviewUrls(){ state.previewUrls.forEach(url=>URL.revokeObjectURL(url)); state.previewUrls=[]; }
 
-async function init(){ await loadTechnicians(); await loadParts(); await loadJobs(); await loadNotifications(); startNotificationPolling(); }
+async function init(){ await loadTechnicians(); await loadParts(); await loadJobs(); await loadNotifications(); await loadJobStats(); connectWebSocket(); startNotificationPolling(); }
+
+let stompClient = null;
+function connectWebSocket(){
+  if(!user || !user.token) return;
+  if(typeof SockJS === 'undefined' || typeof Stomp === 'undefined') return;
+  try{
+    const socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    // disable debug
+    stompClient.debug = null;
+    stompClient.connect({}, function(frame){
+      const dest = '/topic/notifications/' + user.username;
+      stompClient.subscribe(dest, function(message){
+        try{
+          const payload = JSON.parse(message.body);
+          // prepend
+          state.notifications.unshift(payload);
+          renderNotifications();
+          // update badge
+          const unread = state.notifications.filter(n=>!n.read).length;
+          renderNotificationBadge(unread);
+        }catch(e){ console.warn('Invalid ws payload', e); }
+      });
+    }, function(err){
+      console.warn('WS connect error', err);
+    });
+  }catch(e){ console.warn('WS init failed', e); }
+}
+
+function disconnectWebSocket(){
+  try{ if(stompClient) { stompClient.disconnect(); stompClient=null; } }catch(e){}
+}
+
+window.addEventListener('beforeunload', ()=>{ disconnectWebSocket(); });
+
+function buildJobQueryParams(){
+  const params={};
+  const k=document.getElementById('filterKeyword').value.trim(); if(k) params.keyword=k;
+  const s=document.getElementById('filterStatus').value; if(s) params.status=s;
+  const p=document.getElementById('filterPriority').value; if(p) params.priority=p;
+  if(!isAdmin && user.id){ params.assignedUserId = user.id; }
+  return params;
+}
 
 async function loadJobs(){
   try{
-    const params={};
-    const k=document.getElementById('filterKeyword').value.trim(); if(k) params.keyword=k;
-    const s=document.getElementById('filterStatus').value; if(s) params.status=s;
-    const p=document.getElementById('filterPriority').value; if(p) params.priority=p;
-    
-    // Technician chỉ thấy job được giao cho mình
-    if(!isAdmin && user.id) {
-      params.assignedUserId = user.id;
-    }
-    
+    const params=buildJobQueryParams();
     const res=await axios.get('/api/jobs',{headers:authHeaders,params});
     state.jobs=res.data.content||[]; document.getElementById('jobCount').textContent=state.jobs.length;
     renderJobs();
@@ -291,7 +363,69 @@ async function loadJobs(){
     }
     if(state.jobs.length && !state.selected) await selectJob(state.jobs[0].id);
     if(!state.jobs.length){ state.selected=null; renderSelected(); }
+    await loadJobStats();
   }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function exportJobs(format){
+  if(!isAdmin){ showMessage('Only admin can export','warning'); return; }
+  try{
+    const params=buildJobQueryParams();
+    params.format=format || 'csv';
+    const res=await axios.get('/api/jobs/export',{headers:authHeaders,params,responseType:'blob'});
+    const disposition=res.headers['content-disposition'] || '';
+    const match=/filename=\"?([^\";]+)\"?/i.exec(disposition);
+    const filename=match?match[1]:'jobs-export.'+(format==='xlsx'?'xlsx':'csv');
+    const url=URL.createObjectURL(res.data);
+    const link=document.createElement('a');
+    link.href=url; link.download=filename;
+    document.body.appendChild(link); link.click(); link.remove();
+    URL.revokeObjectURL(url);
+    showMessage('Exported jobs ('+format.toUpperCase()+')','success');
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function importJobs(){
+  if(!isAdmin){ showMessage('Only admin can import','warning'); return; }
+  const fileInput=document.getElementById('importFile');
+  if(!fileInput.files.length){ showMessage('Choose a CSV file first','warning'); return; }
+  const formData=new FormData();
+  formData.append('file', fileInput.files[0]);
+  try{
+    const res=await axios.post('/api/jobs/import',formData,{headers:{...authHeaders,'Content-Type':'multipart/form-data'}});
+    const summary=res.data;
+    const msg=`Imported ${summary.imported}/${summary.totalRows} rows${summary.failed?`, failed ${summary.failed}`:''}`;
+    showMessage(msg,'success');
+    if(summary.errors && summary.errors.length){
+      console.warn('Import errors', summary.errors);
+    }
+    await loadJobs();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function loadJobStats(){
+  try{
+    const params = isAdmin ? {} : { assignedUserId: user.id };
+    const res=await axios.get('/api/jobs/stats',{headers:authHeaders, params});
+    renderJobStats(res.data);
+  }catch(e){
+    // keep silent on unauthorized
+  }
+}
+
+function renderJobStats(stats){
+  if(!stats) return;
+  const byStatus=stats.byStatus || {};
+  const byPriority=stats.byPriority || {};
+  document.getElementById('statTotal').textContent=stats.total ?? 0;
+  document.getElementById('statCreated').textContent=byStatus.CREATED ?? 0;
+  document.getElementById('statAssigned').textContent=byStatus.ASSIGNED ?? 0;
+  document.getElementById('statInProgress').textContent=byStatus.IN_PROGRESS ?? 0;
+  document.getElementById('statCompleted').textContent=byStatus.COMPLETED ?? 0;
+  document.getElementById('statUrgent').textContent=byPriority.URGENT ?? 0;
+  document.getElementById('statHigh').textContent=byPriority.HIGH ?? 0;
+  document.getElementById('statMedium').textContent=byPriority.MEDIUM ?? 0;
+  document.getElementById('statLow').textContent=byPriority.LOW ?? 0;
 }
 
 function renderJobs(){
@@ -340,7 +474,9 @@ function renderNotifications(){
         <div class="small text-muted">${formatDateTime(n.createdAt)}</div>
       </div>
       <div class="d-flex flex-column gap-1 align-items-end">
-        <button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job</button>
+        ${n.type==='LOW_STOCK'
+          ? `<button class="btn btn-sm btn-outline-primary" onclick="openLowStockPart(${n.partId},${n.id})" type="button">Mo vat tu</button>`
+          : `<button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job</button>`}
         ${n.read?'':`<button class="btn btn-sm btn-outline-secondary" onclick="markNotificationRead(${n.id})" type="button">Da doc</button>`}
         <button class="btn btn-sm btn-outline-danger" onclick="clearNotification(${n.id})" type="button">Clear</button>
       </div>
@@ -380,6 +516,23 @@ async function openNotificationJob(jobId,notificationId){
     if(notificationId) await axios.patch('/api/notifications/'+notificationId+'/read',{}, {headers:authHeaders});
     await loadNotifications();
     await selectJob(jobId);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function openLowStockPart(partId, notificationId){
+  if(!partId){ showMessage('Part not found in notification','warning'); return; }
+  try{
+    if(notificationId) await axios.patch('/api/notifications/'+notificationId+'/read',{}, {headers:authHeaders});
+    await loadNotifications();
+    await loadParts();
+    if(isAdmin){
+      const part = state.parts.find(p=>p.id===partId);
+      if(part){
+        editPart(partId);
+        document.getElementById('inventoryCard')?.scrollIntoView({behavior:'smooth'});
+      }
+    }
+    showMessage('Low stock part opened','success');
   }catch(e){ showMessage(resolveError(e),'danger'); }
 }
 

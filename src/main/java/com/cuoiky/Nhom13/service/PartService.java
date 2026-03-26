@@ -16,9 +16,11 @@ import java.util.List;
 @Transactional
 public class PartService {
     private final PartRepository partRepository;
+    private final NotificationService notificationService;
 
-    public PartService(PartRepository partRepository) {
+    public PartService(PartRepository partRepository, NotificationService notificationService) {
         this.partRepository = partRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -41,7 +43,9 @@ public class PartService {
         applyRequest(part, request);
         part.setPartCode(partCode);
         part.setBarcode(effectiveBarcode);
-        return toResponse(partRepository.save(part));
+        Part saved = partRepository.save(part);
+        notificationService.notifyLowStockIfNeeded(saved);
+        return toResponse(saved);
     }
 
     public PartResponse update(Long partId, PartRequest request) {
@@ -61,7 +65,9 @@ public class PartService {
         applyRequest(part, request);
         part.setPartCode(partCode);
         part.setBarcode(effectiveBarcode);
-        return toResponse(partRepository.save(part));
+        Part saved = partRepository.save(part);
+        notificationService.notifyLowStockIfNeeded(saved);
+        return toResponse(saved);
     }
 
     public PartResponse adjustStock(Long partId, int deltaQuantity) {
@@ -72,7 +78,9 @@ public class PartService {
             throw new IllegalArgumentException("Stock cannot be negative");
         }
         part.setStockQuantity(after);
-        return toResponse(partRepository.save(part));
+        Part saved = partRepository.save(part);
+        notificationService.notifyLowStockIfNeeded(saved);
+        return toResponse(saved);
     }
 
     public void delete(Long partId) {

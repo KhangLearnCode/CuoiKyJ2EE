@@ -4,10 +4,9 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>FSM Jobs</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
@@ -15,143 +14,154 @@
   <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
   <style>
     :root {
-      --bg: #f6f0e6;
-      --surface: rgba(255,255,255,0.78);
-      --surface-strong: #fffdfa;
-      --text: #1c2430;
-      --muted: #667085;
-      --line: rgba(28, 36, 48, 0.10);
-      --brand: #0f766e;
-      --brand-2: #c2410c;
-      --shadow: 0 24px 60px rgba(15, 23, 42, 0.10);
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --background: #0f172a;
+      --surface: #1e293b;
+      --text: #e2e8f0;
+      --text-secondary: #94a3b8;
     }
     body {
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 25%),
-        radial-gradient(circle at top right, rgba(194, 65, 12, 0.12), transparent 20%),
-        linear-gradient(180deg, #fbf7f1 0%, #eee4d6 100%);
+      background: var(--background);
       color: var(--text);
-      font-family: "Manrope", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
-    .workspace-shell {
-      max-width: 1540px;
+    .floating-shapes { position: fixed; inset: 0; z-index: -1; }
+    .shape { position: absolute; border-radius: 50%; filter: blur(40px); background: rgba(99, 102, 241, 0.12); animation: float 20s infinite ease-in-out; }
+    .shape:nth-child(1) { width: 260px; height: 260px; top: 10%; left: 8%; }
+    .shape:nth-child(2) { width: 180px; height: 180px; top: 58%; right: 10%; animation-delay: 4s; }
+    .shape:nth-child(3) { width: 220px; height: 220px; bottom: 8%; left: 32%; animation-delay: 9s; }
+    @keyframes float { 0%,100%{transform:translate(0,0)} 50%{transform:translate(25px,-20px)} }
+
+    .fsm-icon-btn { border: 0; background: transparent; color: #fff; font-size: 1.2rem; margin-right: 12px; }
+    body.sidebar-collapsed #sidebarMenu {
+      display: none !important;
     }
-    .workspace-header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      padding: 20px 0 18px;
-      backdrop-filter: blur(18px);
-      background: rgba(246, 240, 230, 0.72);
+    body.sidebar-collapsed .main-wrapper {
+      margin-left: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      flex: 0 0 100%;
     }
-    .workspace-brand {
-      font-family: "Space Grotesk", sans-serif;
-      font-size: clamp(2rem, 3vw, 2.8rem);
-      line-height: 0.95;
-      letter-spacing: -0.05em;
-      margin: 0;
+    .navbar {
+      background: rgba(15, 23, 42, .85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(99,102,241,.2);
     }
-    .workspace-subtitle {
-      color: var(--muted);
-      max-width: 64ch;
-    }
-    .control-chip {
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.66);
-      padding: 0.85rem 1rem;
-      font-weight: 700;
-    }
-    .glass-card,
-    .card {
-      border: 1px solid rgba(255,255,255,0.7) !important;
-      border-radius: 24px !important;
-      background: var(--surface) !important;
-      backdrop-filter: blur(16px);
-      box-shadow: var(--shadow);
-    }
-    .card-header {
-      background: transparent !important;
-      border-bottom: 1px solid var(--line) !important;
-      padding: 1.05rem 1.25rem !important;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-    .card-body {
-      padding: 1.2rem 1.25rem !important;
-    }
+    .navbar-brand, .nav-link, .title-group h1 { color: var(--text) !important; }
+    .title-group small, .text-muted { color: var(--text-secondary) !important; }
+    .card-header, .card-body, .small, span, p, li, label, h6, h5, h4, h3, h2, h1, div { color: var(--text); }
+    .text-secondary { color: var(--text-secondary) !important; }
+    .alert { color: #fff !important; }
+    .btn-outline-secondary, .btn-outline-dark { color: #fff !important; border-color: rgba(255,255,255,.35) !important; }
+    .btn-outline-secondary:hover, .btn-outline-dark:hover { background: rgba(255,255,255,.12) !important; }
+    .sidebar { background: rgba(15, 23, 42, .75); border-right: 1px solid rgba(99,102,241,.2); }
+    .sidebar .nav-link.active { background: rgba(99,102,241,.2); border-radius: 10px; }
     .form-control,
     .form-select {
-      border-radius: 16px !important;
-      border: 1px solid var(--line) !important;
+      border-radius: 10px !important;
+      border: 1px solid rgba(99,102,241,.2) !important;
       min-height: 46px;
-      background: rgba(255,255,255,0.8) !important;
+      background: rgba(15, 23, 42, 0.55) !important;
+      color: var(--text) !important;
     }
+    .form-control::placeholder { color: #cbd5e1 !important; opacity: .85; }
+    option { color: #fff; background: #1f2937; }
     .form-control:focus,
     .form-select:focus {
-      border-color: rgba(15,118,110,0.45) !important;
-      box-shadow: 0 0 0 0.2rem rgba(15,118,110,0.12) !important;
+      border-color: #80bdff !important;
+      box-shadow: 0 0 0 0.2rem rgba(0,123,255,.15) !important;
     }
-    .btn {
-      border-radius: 14px !important;
-      font-weight: 700 !important;
-    }
-    #messageBox {
-      border-radius: 20px;
-      border: 1px solid transparent;
-      box-shadow: var(--shadow);
-    }
+    .btn { border-radius: 10px !important; }
     .signature-canvas { width: 100%; height: 180px; border: 1px dashed #8b99ad; border-radius: 18px; touch-action: none; background: #fff; }
     .job-image { width: 100%; height: 150px; object-fit: cover; background: #f8f9fa; border-radius: 14px; }
-    .notification-item { border: 1px solid var(--line); border-radius: 18px; padding: 14px; margin-bottom: 12px; background: var(--surface-strong); }
-    .notification-item.unread { border-color: rgba(15,118,110,0.35); background: rgba(232, 248, 245, 0.95); }
+    .notification-item { border: 1px solid rgba(99,102,241,.2); border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(15,23,42,.45); color: #f8fafc !important; }
+    .notification-item .fw-semibold { color: #ffffff !important; }
+    .notification-item .small { color: #e2e8f0 !important; }
+    .notification-item .text-muted { color: #cbd5e1 !important; }
+    .notification-item.unread { border-color: rgba(99,102,241,.55); background: rgba(30, 41, 59, 0.9); }
     #scannerReader { width: 100%; min-height: 240px; border: 1px dashed #8b99ad; border-radius: 18px; overflow: hidden; background: rgba(255,255,255,0.92); }
-    .lookup-result { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: var(--surface-strong); }
+    .lookup-result { border: 1px solid rgba(99,102,241,.2); border-radius: 12px; padding: 14px; background: rgba(15,23,42,.45); }
     #jobsBody > div,
     #partsList > div {
-      border: 1px solid var(--line) !important;
-      border-radius: 18px !important;
-      background: var(--surface-strong);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+      border: 1px solid rgba(99,102,241,.2) !important;
+      border-radius: 12px !important;
+      background: rgba(15,23,42,.45);
     }
     #selectedJobBox ul {
       padding-left: 1.1rem;
     }
     #partQrPanel {
-      border-radius: 18px !important;
-      border: 1px solid var(--line) !important;
+      border-radius: 12px !important;
+      border: 1px solid rgba(99,102,241,.2) !important;
     }
-    @media (max-width: 991px) {
-      .workspace-header {
-        position: static;
-      }
+    .custom-block {
+      background: rgba(30, 41, 59, 0.75) !important;
+      border: 1px solid rgba(99,102,241,.2);
+      border-radius: 14px;
     }
+    .border, hr { border-color: rgba(148,163,184,.28) !important; }
+    .badge.text-bg-light { background: rgba(99,102,241,.2) !important; color: #dbeafe !important; }
   </style>
 </head>
 <body>
-<div class="container workspace-shell py-3">
-  <div class="workspace-header mb-3">
-    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
-      <div>
-        <div class="small text-uppercase fw-bold text-secondary mb-2">Operations Workspace</div>
-        <h1 class="workspace-brand">FSM Jobs Workspace</h1>
-        <div class="workspace-subtitle mt-2">Dispatch, field execution, parts lookup, notifications, signatures, and inventory in one operational surface.</div>
-      </div>
-      <div class="d-flex flex-wrap align-items-center gap-2 justify-content-lg-end">
-        <span id="userLabel" class="control-chip"></span>
-        <div>
-      <button class="btn btn-sm btn-outline-dark me-2" onclick="toggleNotifications()" type="button">
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
         Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
       </button>
-          <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
-        </div>
-      </div>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
     </div>
   </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <nav id="sidebarMenu" class="col-md-3 col-lg-3 d-md-block sidebar collapse">
+      <div class="position-sticky py-4 px-3 sidebar-sticky">
+        <ul class="nav flex-column h-100">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-fill me-2"></i>
+              Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-kanban-fill me-2"></i>
+              Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item border-top mt-auto pt-2">
+            <a class="nav-link" href="javascript:void(0)" onclick="logout()">
+              <i class="bi-box-arrow-left me-2"></i>
+              Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <main class="main-wrapper col-md-9 ms-sm-auto py-4 col-lg-9 px-md-4 border-start">
+      <div class="title-group mb-3">
+        <h1 class="h2 mb-0">FSM Jobs Workspace</h1>
+        <small class="text-muted">Dispatch, execution, parts lookup, notifications, signatures.</small>
+      </div>
 
   <div id="messageBox" class="alert d-none"></div>
-  <div id="notificationPanel" class="card mb-3 d-none">
+  <div id="notificationPanel" class="custom-block bg-white mb-3 d-none">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span>Thong bao</span>
       <button class="btn btn-sm btn-outline-secondary" onclick="markAllNotificationsRead()" type="button">Danh dau da doc</button>
@@ -161,7 +171,7 @@
 
   <div class="row g-4">
     <div class="col-lg-4">
-      <div class="card mb-3 glass-card">
+      <div class="custom-block bg-white mb-3">
         <div class="card-header">Workspace Stats</div>
         <div class="card-body">
           <div class="d-flex justify-content-between small mb-2"><span>Total jobs</span><span id="statTotal">0</span></div>
@@ -177,7 +187,7 @@
         </div>
       </div>
 
-      <div class="card mb-3" id="jobFormCard">
+      <div class="custom-block bg-white mb-3" id="jobFormCard">
         <div class="card-header">Job Form (Admin)</div>
         <div class="card-body">
           <form id="jobForm">
@@ -196,7 +206,7 @@
         </div>
       </div>
 
-      <div class="card mb-3 glass-card">
+      <div class="custom-block bg-white mb-3">
         <div class="card-header">Filters</div>
         <div class="card-body">
           <input class="form-control mb-2" id="filterKeyword" placeholder="Keyword"/>
@@ -206,7 +216,7 @@
         </div>
       </div>
 
-      <div class="card mb-3 glass-card" id="dataToolsCard">
+      <div class="custom-block bg-white mb-3" id="dataToolsCard">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span>Data Tools</span>
           <div class="badge text-bg-light">Admin</div>
@@ -226,7 +236,7 @@
         </div>
       </div>
 
-      <div class="card mb-3 glass-card">
+      <div class="custom-block bg-white mb-3">
         <div class="card-header">Parts Lookup</div>
         <div class="card-body">
           <div id="scannerReader" class="mb-2"></div>
@@ -243,7 +253,7 @@
         </div>
       </div>
 
-      <div class="card glass-card" id="inventoryCard">
+      <div class="custom-block bg-white" id="inventoryCard">
         <div class="card-header">Inventory (Admin)</div>
         <div class="card-body">
           <form id="partForm" class="mb-2">
@@ -274,18 +284,20 @@
     </div>
 
     <div class="col-lg-4">
-      <div class="card glass-card">
+      <div class="custom-block bg-white">
         <div class="card-header d-flex justify-content-between"><span>Jobs</span><span id="jobCount" class="badge text-bg-dark">0</span></div>
         <div class="card-body" id="jobsBody"></div>
       </div>
     </div>
 
     <div class="col-lg-4">
-      <div class="card glass-card">
+      <div class="custom-block bg-white">
         <div class="card-header">Selected Job</div>
         <div class="card-body" id="selectedJobBox"><div class="text-muted">Select job</div></div>
       </div>
     </div>
+  </div>
+    </main>
   </div>
 </div>
 
@@ -428,6 +440,10 @@ function renderJobStats(stats){
   document.getElementById('statLow').textContent=byPriority.LOW ?? 0;
 }
 
+function toggleSidebar(){
+  document.body.classList.toggle('sidebar-collapsed');
+}
+
 function renderJobs(){
   const box=document.getElementById('jobsBody');
   if(!state.jobs.length){ box.innerHTML='<div class="text-muted">No jobs</div>'; return; }
@@ -476,7 +492,9 @@ function renderNotifications(){
       <div class="d-flex flex-column gap-1 align-items-end">
         ${n.type==='LOW_STOCK'
           ? `<button class="btn btn-sm btn-outline-primary" onclick="openLowStockPart(${n.partId},${n.id})" type="button">Mo vat tu</button>`
-          : `<button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job</button>`}
+          : n.type==='JOB_DUE_SOON'
+            ? `<button class="btn btn-sm btn-outline-warning" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job sap den han</button>`
+            : `<button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job</button>`}
         ${n.read?'':`<button class="btn btn-sm btn-outline-secondary" onclick="markNotificationRead(${n.id})" type="button">Da doc</button>`}
         <button class="btn btn-sm btn-outline-danger" onclick="clearNotification(${n.id})" type="button">Clear</button>
       </div>

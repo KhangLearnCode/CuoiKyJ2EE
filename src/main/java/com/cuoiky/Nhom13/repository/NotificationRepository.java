@@ -20,4 +20,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     boolean existsByRecipient_IdAndJobIdAndTypeAndJobStatus(Long recipientId, Long jobId, NotificationType type, JobStatus jobStatus);
 
     boolean existsByRecipient_IdAndTypeAndPartId(Long recipientId, NotificationType type, Long partId);
+
+    boolean existsByRecipient_IdAndJobIdAndType(Long recipientId, Long jobId, NotificationType type);
 }

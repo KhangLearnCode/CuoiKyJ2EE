@@ -53,7 +53,7 @@ public class WebSecurityConfig {
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth ->
-                        auth.requestMatchers("/", "/login", "/register", "/jobs", "/static/**", "/css/**", "/js/**", "/ws/**", "/app/**", "/topic/**").permitAll()
+                        auth.requestMatchers("/", "/login", "/register", "/jobs", "/static/**", "/css/**", "/js/**", "/ws/**", "/app/**", "/topic/**", "/tooplate/**").permitAll()
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/api/test/**").permitAll()
                                 .anyRequest().authenticated()

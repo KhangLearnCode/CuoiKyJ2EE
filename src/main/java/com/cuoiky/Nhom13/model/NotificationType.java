@@ -4,5 +4,6 @@ public enum NotificationType {
     JOB_CREATED,
     JOB_COMPLETED,
     JOB_STATUS_CHANGED,
-    LOW_STOCK
+    LOW_STOCK,
+    JOB_DUE_SOON
 }

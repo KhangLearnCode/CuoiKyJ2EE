@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 
 @Service
 @Transactional
@@ -94,6 +96,42 @@ public class NotificationService {
         partRepository.findAll().forEach(this::notifyLowStockIfNeeded);
     }
 
+    @Scheduled(fixedDelayString = "${app.notifications.job-due-soon-ms:60000}")
+    public void scanDueSoonJobs() {
+        LocalDate today = LocalDate.now();
+        int thresholdDays = 1;
+        for (Job job : jobRepository.findAllByOrderByIdAsc()) {
+            if (job.getScheduledDate() == null) {
+                continue;
+            }
+            if (job.getStatus() == JobStatus.COMPLETED || job.getStatus() == JobStatus.CANCELLED) {
+                continue;
+            }
+            long daysLeft = ChronoUnit.DAYS.between(today, job.getScheduledDate());
+            if (daysLeft < 0 || daysLeft > thresholdDays) {
+                continue;
+            }
+            notifyJobDueSoon(job, daysLeft);
+        }
+    }
+
+    private void notifyJobDueSoon(Job job, long daysLeft) {
+        List<User> recipients = userRepository.findDistinctByRoles_NameOrderByUsernameAsc(ERole.ROLE_ADMIN);
+        if (job.getAssignedUser() != null) {
+            recipients = new ArrayList<>(recipients);
+            if (recipients.stream().noneMatch(u -> u.getId().equals(job.getAssignedUser().getId()))) {
+                recipients.add(job.getAssignedUser());
+            }
+        }
+        String dueText = daysLeft == 0 ? "hom nay" : ("trong " + daysLeft + " ngay");
+        saveNotifications(recipients, NotificationType.JOB_DUE_SOON,
+                "Job sap den han: " + job.getJobCode(),
+                job.getTitle() + " se den han " + dueText + " (" + job.getScheduledDate() + ")",
+                job.getId(),
+                null,
+                null);
+    }
+
     public void notifyLowStockIfNeeded(Part part) {
         if (part == null) {
             return;
@@ -159,6 +197,9 @@ public class NotificationService {
                 .filter(recipient -> {
                     if (partId != null) {
                         return !notificationRepository.existsByRecipient_IdAndTypeAndPartId(recipient.getId(), type, partId);
+                    }
+                    if (type == NotificationType.JOB_DUE_SOON && jobId != null) {
+                        return !notificationRepository.existsByRecipient_IdAndJobIdAndType(recipient.getId(), jobId, type);
                     }
                     return !notificationRepository.existsByRecipient_IdAndJobIdAndTypeAndJobStatus(recipient.getId(), jobId, type, jobStatus);
                 })

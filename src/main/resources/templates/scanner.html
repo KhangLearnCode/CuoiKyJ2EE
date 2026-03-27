@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>QR Scanner - FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <div th:replace="~{common-styles.fragment :: styles}"></div>
+  <style>
+    #scannerReader {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      min-height: 400px;
+      border: 2px solid rgba(99,102,241,.3);
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.95);
+    }
+  </style>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+      <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-door"></i> Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-briefcase"></i> Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="logout()">
+              <i class="bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
+      <div class="pt-3 pb-2 mb-3">
+        <h1 class="h3">QR / Barcode Scanner</h1>
+        <p class="text-muted small">Scan barcodes and QR codes to lookup parts information</p>
+      </div>
+
+      <div id="messageBox" class="alert d-none"></div>
+
+      <!-- Sub Navigation -->
+      <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
+
+      <!-- Scanner Content -->
+      <div class="row g-4">
+        <!-- Left Column: Scanner & Manual Lookup -->
+        <div class="col-lg-6">
+          <!-- QR Scanner -->
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Camera Scanner</h6>
+            </div>
+            <div class="card-body">
+              <div id="scannerReader"></div>
+              <div class="d-flex gap-2 mt-3">
+                <button id="startScanBtn" class="btn btn-primary" onclick="startScanner()">
+                  <i class="bi-camera"></i> Start Camera
+                </button>
+                <button id="stopScanBtn" class="btn btn-danger d-none" onclick="stopScanner()">
+                  <i class="bi-stop-circle"></i> Stop Camera
+                </button>
+              </div>
+              <div id="scanStatus" class="small text-muted mt-2"></div>
+            </div>
+          </div>
+
+          <!-- Manual Lookup -->
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Manual Lookup</h6>
+            </div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small">Enter Barcode / Part Code</label>
+                <input type="text" id="lookupInput" class="form-control" 
+                  placeholder="Type barcode or part code..." onkeyup="handleLookupKeyup(event)"/>
+              </div>
+              <button class="btn btn-dark w-100" onclick="lookupPart()">
+                <i class="bi-search"></i> Lookup Part
+              </button>
+            </div>
+          </div>
+
+          <!-- Search Parts -->
+          <div class="card custom-block mt-3">
+            <div class="card-header">
+              <h6 class="mb-0">Search Parts by Name</h6>
+            </div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small">Search by Keyword</label>
+                <input type="text" id="searchInput" class="form-control" 
+                  placeholder="Search by name, code..." onkeyup="handleSearchKeyup(event)"/>
+              </div>
+              <button class="btn btn-secondary w-100" onclick="searchParts()">
+                <i class="bi-funnel"></i> Search
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Lookup Results -->
+        <div class="col-lg-6">
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Lookup Results</h6>
+            </div>
+            <div class="card-body">
+              <div id="lookupResults">
+                <div class="text-muted text-center py-5">
+                  <i class="bi-qr-code-scan" style="font-size: 3rem; opacity: 0.3;"></i>
+                  <p class="mt-2">Scan a code or perform a lookup to see results</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div th:replace="~{common-scripts.fragment :: scripts}"></div>
+
+<script>
+// Scanner state
+let scannerInstance = null;
+let scannerRunning = false;
+
+// Start QR scanner
+async function startScanner() {
+  if (scannerRunning) return;
+  
+  const readerDiv = document.getElementById('scannerReader');
+  const statusDiv = document.getElementById('scanStatus');
+  const startBtn = document.getElementById('startScanBtn');
+  const stopBtn = document.getElementById('stopScanBtn');
+  
+  try {
+    if (typeof Html5Qrcode === 'undefined') {
+      showMessage('Scanner library not loaded. Please refresh the page.', 'danger');
+      return;
+    }
+    
+    scannerInstance = new Html5Qrcode('scannerReader');
+    
+    await scannerInstance.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      onScanSuccess,
+      onScanFailure
+    );
+    
+    scannerRunning = true;
+    startBtn.classList.add('d-none');
+    stopBtn.classList.remove('d-none');
+    statusDiv.textContent = 'Scanner active. Point camera at barcode/QR code.';
+    statusDiv.className = 'small text-success mt-2';
+  } catch(e) {
+    showMessage('Failed to start camera: ' + e.message, 'danger');
+    statusDiv.textContent = 'Failed to start camera: ' + e.message;
+    statusDiv.className = 'small text-danger mt-2';
+  }
+}
+
+// Stop scanner
+async function stopScanner() {
+  if (!scannerInstance || !scannerRunning) return;
+  
+  const statusDiv = document.getElementById('scanStatus');
+  const startBtn = document.getElementById('startScanBtn');
+  const stopBtn = document.getElementById('stopScanBtn');
+  
+  try {
+    await scannerInstance.stop();
+    scannerInstance = null;
+    scannerRunning = false;
+    startBtn.classList.remove('d-none');
+    stopBtn.classList.add('d-none');
+    statusDiv.textContent = 'Scanner stopped.';
+    statusDiv.className = 'small text-muted mt-2';
+  } catch(e) {
+    console.warn('Stop scanner error:', e);
+  }
+}
+
+// On scan success
+function onScanSuccess(decodedText, decodedResult) {
+  const statusDiv = document.getElementById('scanStatus');
+  statusDiv.textContent = 'Scanned: ' + decodedText;
+  statusDiv.className = 'small text-info mt-2';
+  
+  // Auto lookup
+  document.getElementById('lookupInput').value = decodedText;
+  lookupPart();
+  
+  // Stop scanner after successful scan (optional)
+  // stopScanner();
+}
+
+// On scan failure (silent)
+function onScanFailure(error) {
+  // Don't show errors for continuous scanning
+}
+
+// Lookup part by barcode/code
+async function lookupPart() {
+  const input = document.getElementById('lookupInput').value.trim();
+  
+  if (!input) {
+    showMessage('Please enter a barcode or part code', 'warning');
+    return;
+  }
+  
+  try {
+    const res = await axios.get('/api/parts/lookup', {
+      headers: authHeaders,
+      params: { value: input }
+    });
+    
+    state.lookupResult = res.data;
+    state.lookupSearchResults = [];
+    renderLookupResults();
+  } catch(e) {
+    if (e.response && e.response.status === 404) {
+      showMessage('Part not found: ' + input, 'warning');
+      document.getElementById('lookupResults').innerHTML = 
+        '<div class="text-muted text-center py-4">Part not found</div>';
+    } else {
+      showMessage(resolveError(e), 'danger');
+    }
+  }
+}
+
+// Search parts by keyword
+async function searchParts() {
+  const keyword = document.getElementById('searchInput').value.trim();
+  
+  if (!keyword) {
+    showMessage('Please enter a search keyword', 'warning');
+    return;
+  }
+  
+  try {
+    const res = await axios.get('/api/parts/search', {
+      headers: authHeaders,
+      params: { keyword }
+    });
+    
+    state.lookupSearchResults = res.data.content || [];
+    state.lookupResult = null;
+    renderLookupResults();
+    
+    if (state.lookupSearchResults.length === 0) {
+      showMessage('No parts found matching: ' + keyword, 'info');
+    }
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Render lookup results
+function renderLookupResults() {
+  const box = document.getElementById('lookupResults');
+  
+  // Single result from lookup
+  if (state.lookupResult) {
+    const p = state.lookupResult;
+    box.innerHTML = `
+      <div class="lookup-result">
+        <h5 class="mb-2">${escapeHtml(p.partCode)}</h5>
+        <h6 class="text-muted mb-3">${escapeHtml(p.partName)}</h6>
+        
+        ${p.barcode ? `<p class="mb-1"><strong>Barcode:</strong> ${escapeHtml(p.barcode)}</p>` : ''}
+        <p class="mb-1"><strong>Unit:</strong> ${escapeHtml(p.unit)}</p>
+        <p class="mb-1"><strong>Stock:</strong> ${p.stockQuantity} ${escapeHtml(p.unit)}</p>
+        <p class="mb-1"><strong>Min Level:</strong> ${p.minimumStockLevel} ${escapeHtml(p.unit)}</p>
+        <p class="mb-1"><strong>Status:</strong> 
+          ${p.active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}
+        </p>
+        
+        ${p.stockQuantity <= p.minimumStockLevel ? 
+          '<div class="alert alert-warning mt-2">⚠️ Low stock warning!</div>' : ''}
+        
+        ${p.stepTemplates && p.stepTemplates.length ? `
+        <div class="mt-3">
+          <h6>Step Templates:</h6>
+          <ol class="mb-0">
+            ${p.stepTemplates.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+          </ol>
+        </div>
+        ` : ''}
+        
+        <div class="mt-3">
+          <button class="btn btn-sm btn-primary" onclick="useLookupPartInJob(${p.id})">
+            <i class="bi-plus-circle"></i> Use in Job
+          </button>
+          ${isAdmin ? `
+          <button class="btn btn-sm btn-outline-primary" onclick="editPartFromLookup(${p.id})">
+            <i class="bi-pencil"></i> Edit Part
+          </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+    return;
+  }
+  
+  // Multiple results from search
+  if (state.lookupSearchResults.length > 0) {
+    box.innerHTML = `
+      <div class="mb-2">
+        <strong>${state.lookupSearchResults.length}</strong> parts found
+      </div>
+      ${state.lookupSearchResults.map(p => `
+        <div class="lookup-result mb-2">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <h6 class="mb-0">${escapeHtml(p.partCode)}</h6>
+              <div class="small text-muted">${escapeHtml(p.partName)}</div>
+            </div>
+            <div>
+              ${p.active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}
+            </div>
+          </div>
+          
+          <div class="small mb-2">
+            <strong>Stock:</strong> ${p.stockQuantity} ${escapeHtml(p.unit)}
+            ${p.barcode ? ` | <strong>Barcode:</strong> ${escapeHtml(p.barcode)}` : ''}
+          </div>
+          
+          <button class="btn btn-sm btn-outline-dark" onclick="selectLookupResult(${p.id})">
+            <i class="bi-eye"></i> View Details
+          </button>
+        </div>
+      `).join('')}
+    `;
+    return;
+  }
+  
+  // No results
+  box.innerHTML = `
+    <div class="text-muted text-center py-5">
+      <i class="bi-qr-code-scan" style="font-size: 3rem; opacity: 0.3;"></i>
+      <p class="mt-2">Scan a code or perform a lookup to see results</p>
+    </div>
+  `;
+}
+
+// Select a search result to view details
+function selectLookupResult(partId) {
+  const part = state.lookupSearchResults.find(p => p.id === partId);
+  if (part) {
+    state.lookupResult = part;
+    state.lookupSearchResults = [];
+    renderLookupResults();
+  }
+}
+
+// Use lookup part in job (redirect to job details with part preselected)
+function useLookupPartInJob(partId) {
+  // Store in session storage for job details page
+  sessionStorage.setItem('preselectedPartId', partId);
+  window.location.href = '/jobs/details';
+}
+
+// Edit part from lookup (redirect to parts management)
+function editPartFromLookup(partId) {
+  window.location.href = '/jobs/parts-management?editPartId=' + partId;
+}
+
+// Handle Enter key in lookup input
+function handleLookupKeyup(event) {
+  if (event.key === 'Enter') {
+    lookupPart();
+  }
+}
+
+// Handle Enter key in search input
+function handleSearchKeyup(event) {
+  if (event.key === 'Enter') {
+    searchParts();
+  }
+}
+
+// Initialize page
+async function initPage() {
+  await loadParts();
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (scannerInstance && scannerRunning) {
+    stopScanner();
+  }
+});
+
+// Start when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPage);
+} else {
+  initPage();
+}
+</script>
+
+</body>
+</html>

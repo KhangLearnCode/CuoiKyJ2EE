@@ -20,9 +20,4 @@ public class ViewController {
     public String register() {
         return "register";
     }
-
-    @GetMapping("/jobs")
-    public String jobs() {
-        return "jobs";
-    }
 }

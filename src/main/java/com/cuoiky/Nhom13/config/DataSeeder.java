@@ -57,29 +57,88 @@ public class DataSeeder implements CommandLineRunner {
             return;
         }
 
+        // Create Users
         User admin = createUserIfMissing("dispatcher", "dispatcher@fsm.local", "123456", Set.of(ERole.ROLE_ADMIN));
         User tech1 = createUserIfMissing("tech01", "tech01@fsm.local", "123456", Set.of(ERole.ROLE_USER));
         User tech2 = createUserIfMissing("tech02", "tech02@fsm.local", "123456", Set.of(ERole.ROLE_USER));
+        User tech3 = createUserIfMissing("tech03", "tech03@fsm.local", "123456", Set.of(ERole.ROLE_USER));
 
+        // Create Parts
         Part part1 = createPartIfMissing("P-ROUTER", "Fiber Router", "pcs", 50, 10);
         Part part2 = createPartIfMissing("P-CABLE", "UTP Cable (meter)", "meter", 500, 100);
         Part part3 = createPartIfMissing("P-SENSOR", "Temperature Sensor", "pcs", 40, 5);
+        Part part4 = createPartIfMissing("P-SWITCH", "Network Switch 24-port", "pcs", 25, 5);
+        Part part5 = createPartIfMissing("P-MODEM", "ADSL Modem", "pcs", 60, 15);
+        Part part6 = createPartIfMissing("P-BATTERY", "UPS Battery 12V", "pcs", 30, 8);
+        Part part7 = createPartIfMissing("P-CONNECTOR", "RJ45 Connector", "pcs", 200, 50);
+        Part part8 = createPartIfMissing("P-CABLE-FO", "Fiber Optic Cable (meter)", "meter", 300, 50);
+        Part part9 = createPartIfMissing("P-ANTENNA", "WiFi Antenna", "pcs", 35, 10);
+        Part part10 = createPartIfMissing("P-POWER", "Power Adapter 12V 2A", "pcs", 45, 10);
 
+        // Create Jobs - Various statuses and priorities
         Long job1 = createJob("Install Fiber Router", "Survey and install router for VIP customer",
                 "Nguyen Van A", "12 Nguyen Hue, District 1", LocalDate.now().plusDays(1), JobPriority.HIGH);
         Long job2 = createJob("Repair Air Conditioner", "Inspect compressor and replace sensor",
                 "Tran Thi B", "88 Le Loi, District 3", LocalDate.now().plusDays(2), JobPriority.MEDIUM);
         Long job3 = createJob("Electrical Inspection", "Routine electrical cabinet inspection",
                 "Factory C", "Lot B2, Thu Duc", LocalDate.now().plusDays(3), JobPriority.URGENT);
+        Long job4 = createJob("Network Upgrade", "Upgrade office network infrastructure with new switches",
+                "ABC Corporation", "456 Phan Xich Long, Phu Nhuan", LocalDate.now().plusDays(2), JobPriority.HIGH);
+        Long job5 = createJob("WiFi Installation", "Install WiFi access points in hotel",
+                "Grand Hotel", "88 Dong Khoi, District 1", LocalDate.now().plusDays(4), JobPriority.MEDIUM);
+        Long job6 = createJob("Emergency Network Repair", "Critical network outage - immediate response required",
+                "Finance Bank HQ", "200 Nguyen Trai, District 5", LocalDate.now(), JobPriority.URGENT);
+        Long job7 = createJob("Server Room Cooling", "Install additional cooling system for server room",
+                "Tech Startup Ltd", "10 Ton That Thiep, District 1", LocalDate.now().plusDays(5), JobPriority.LOW);
+        Long job8 = createJob("Cable Replacement", "Replace damaged fiber optic cable",
+                "Medical Center", "45 Nguyen Van Cu, District 5", LocalDate.now().plusDays(3), JobPriority.MEDIUM);
+        Long job9 = createJob("UPS Installation", "Install UPS system for critical equipment",
+                "Data Center A", "Tan Thuan EPZ", LocalDate.now().plusDays(6), JobPriority.HIGH);
+        Long job10 = createJob("Routine Maintenance", "Monthly preventive maintenance check",
+                "Office Building B", "120 Le Lai, District 1", LocalDate.now().plusDays(7), JobPriority.LOW);
 
+        // Assign jobs and set different statuses
+        // Job 1: IN_PROGRESS with parts used
         assignAndMove(job1, tech1.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
-        assignAndMove(job2, tech2.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
-        assignAndMove(job3, tech1.getId(), admin.getUsername(), JobStatus.ASSIGNED);
-
         usePart(job1, part1.getId(), 1, tech1.getUsername(), false, "Router installation");
         usePart(job1, part2.getId(), 20, tech1.getUsername(), false, "Cable run");
+
+        // Job 2: COMPLETED
+        assignAndMove(job2, tech2.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
         usePart(job2, part3.getId(), 2, tech2.getUsername(), false, "Sensor replacement");
         jobService.updateStatus(job2, JobStatus.COMPLETED, tech2.getUsername(), false);
+
+        // Job 3: ASSIGNED (not started yet)
+        assignAndMove(job3, tech1.getId(), admin.getUsername(), JobStatus.ASSIGNED);
+
+        // Job 4: IN_PROGRESS with multiple parts
+        assignAndMove(job4, tech3.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
+        usePart(job4, part4.getId(), 2, tech3.getUsername(), false, "Switch installation");
+        usePart(job4, part7.getId(), 48, tech3.getUsername(), false, "Network connectors");
+        usePart(job4, part2.getId(), 150, tech3.getUsername(), false, "Network cabling");
+
+        // Job 5: ASSIGNED to tech2
+        assignAndMove(job5, tech2.getId(), admin.getUsername(), JobStatus.ASSIGNED);
+
+        // Job 6: URGENT - IN_PROGRESS
+        assignAndMove(job6, tech1.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
+        usePart(job6, part4.getId(), 1, tech1.getUsername(), false, "Emergency switch replacement");
+
+        // Job 7: CREATED (not assigned yet)
+        // No assignment - stays in CREATED status
+
+        // Job 8: COMPLETED
+        assignAndMove(job8, tech2.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
+        usePart(job8, part8.getId(), 50, tech2.getUsername(), false, "Fiber cable replacement");
+        usePart(job8, part7.getId(), 4, tech2.getUsername(), false, "Connectors");
+        jobService.updateStatus(job8, JobStatus.COMPLETED, tech2.getUsername(), false);
+
+        // Job 9: ASSIGNED to tech3
+        assignAndMove(job9, tech3.getId(), admin.getUsername(), JobStatus.ASSIGNED);
+
+        // Job 10: IN_PROGRESS
+        assignAndMove(job10, tech1.getId(), admin.getUsername(), JobStatus.IN_PROGRESS);
+        usePart(job10, part3.getId(), 1, tech1.getUsername(), false, "Sensor check replacement");
     }
 
     private User createUserIfMissing(String username, String email, String rawPassword, Set<ERole> roleNames) {

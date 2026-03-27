@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Data Tools - FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <div th:replace="~{common-styles.fragment :: styles}"></div>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+      <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-door"></i> Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-briefcase"></i> Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="logout()">
+              <i class="bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
+      <div class="pt-3 pb-2 mb-3">
+        <h1 class="h3">Data Tools & Statistics</h1>
+        <p class="text-muted small">Import/Export data and view workspace statistics</p>
+      </div>
+
+      <div id="messageBox" class="alert d-none"></div>
+
+      <!-- Sub Navigation -->
+      <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
+
+      <!-- Admin Check -->
+      <div id="adminCheckMsg" class="alert alert-warning d-none">
+        <i class="bi-shield-exclamation"></i> This page is only accessible to administrators.
+      </div>
+
+      <!-- Main Content Grid -->
+      <div class="row g-4" id="mainContent">
+        <!-- Left Column: Statistics Dashboard -->
+        <div class="col-lg-7">
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Workspace Statistics</h6>
+            </div>
+            <div class="card-body">
+              <div class="row text-center">
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Total Jobs</div>
+                  <div class="h3 mb-0" id="statTotal">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Created</div>
+                  <div class="h3 mb-0 text-secondary" id="statCreated">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Assigned</div>
+                  <div class="h3 mb-0 text-info" id="statAssigned">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">In Progress</div>
+                  <div class="h3 mb-0 text-warning" id="statInProgress">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Completed</div>
+                  <div class="h3 mb-0 text-success" id="statCompleted">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Urgent</div>
+                  <div class="h3 mb-0 text-danger" id="statUrgent">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">High Priority</div>
+                  <div class="h3 mb-0 text-warning" id="statHigh">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Medium</div>
+                  <div class="h3 mb-0 text-info" id="statMedium">0</div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                  <div class="small text-muted">Low Priority</div>
+                  <div class="h3 mb-0 text-secondary" id="statLow">0</div>
+                </div>
+              </div>
+              
+              <div class="text-center mt-3">
+                <button class="btn btn-outline-primary" onclick="loadJobStats()">
+                  <i class="bi-arrow-clockwise"></i> Refresh Statistics
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filters for Export -->
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Export Filters</h6>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-6 mb-2">
+                  <label class="form-label small">Status Filter</label>
+                  <select id="exportFilterStatus" class="form-select">
+                    <option value="">All Status</option>
+                    <option value="CREATED">CREATED</option>
+                    <option value="ASSIGNED">ASSIGNED</option>
+                    <option value="IN_PROGRESS">IN_PROGRESS</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+                <div class="col-md-6 mb-2">
+                  <label class="form-label small">Priority Filter</label>
+                  <select id="exportFilterPriority" class="form-select">
+                    <option value="">All Priorities</option>
+                    <option value="URGENT">URGENT</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="LOW">LOW</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small">Keyword Search</label>
+                  <input type="text" id="exportFilterKeyword" class="form-control" 
+                    placeholder="Search jobs by keyword..."/>
+                </div>
+              </div>
+              <div class="small text-muted mt-2">
+                <i class="bi-info-circle"></i> These filters will be applied to your exports
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Import/Export Tools -->
+        <div class="col-lg-5">
+          <!-- Export Jobs -->
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Export Jobs</h6>
+            </div>
+            <div class="card-body">
+              <p class="small text-muted">Export jobs based on current filter settings</p>
+              <div class="d-grid gap-2">
+                <button class="btn btn-primary" onclick="exportJobs('csv')">
+                  <i class="bi-file-earmark-spreadsheet"></i> Export as CSV
+                </button>
+                <button class="btn btn-success" onclick="exportJobs('xlsx')">
+                  <i class="bi-file-earmark-excel"></i> Export as Excel
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Import Jobs -->
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Import Jobs</h6>
+            </div>
+            <div class="card-body">
+              <p class="small text-muted">Import jobs from CSV file</p>
+              <div class="mb-2">
+                <label class="form-label small">Select CSV File</label>
+                <input type="file" id="importFile" class="form-control" accept=".csv"/>
+              </div>
+              <button class="btn btn-warning w-100" onclick="importJobs()">
+                <i class="bi-upload"></i> Import Jobs
+              </button>
+              
+              <div class="mt-3 small">
+                <strong>CSV Format:</strong>
+                <ul class="mb-0">
+                  <li>jobCode, title, customerName, serviceAddress</li>
+                  <li>scheduledDate (YYYY-MM-DD HH:mm:ss)</li>
+                  <li>priority (URGENT/HIGH/MEDIUM/LOW)</li>
+                  <li>description</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div th:replace="~{common-scripts.fragment :: scripts}"></div>
+
+<script>
+// Check admin permission
+if (!isAdmin) {
+  document.getElementById('adminCheckMsg').classList.remove('d-none');
+  document.getElementById('mainContent').style.display = 'none';
+}
+
+// Build export query params
+function buildExportQueryParams() {
+  const params = {};
+  
+  const keyword = document.getElementById('exportFilterKeyword').value.trim();
+  if (keyword) params.keyword = keyword;
+  
+  const status = document.getElementById('exportFilterStatus').value;
+  if (status) params.status = status;
+  
+  const priority = document.getElementById('exportFilterPriority').value;
+  if (priority) params.priority = priority;
+  
+  return params;
+}
+
+// Export jobs
+async function exportJobs(format) {
+  if (!isAdmin) {
+    showMessage('Only administrators can export data', 'warning');
+    return;
+  }
+  
+  try {
+    const params = buildExportQueryParams();
+    params.format = format || 'csv';
+    
+    showMessage('Preparing export...', 'info');
+    
+    const res = await axios.get('/api/jobs/export', {
+      headers: authHeaders,
+      params: params,
+      responseType: 'blob'
+    });
+    
+    // Extract filename from content-disposition header
+    const disposition = res.headers['content-disposition'] || '';
+    const match = /filename="?([^";]+)"?/i.exec(disposition);
+    const filename = match 
+      ? match[1] 
+      : 'jobs-export.' + (format === 'xlsx' ? 'xlsx' : 'csv');
+    
+    // Create download link
+    const url = URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    
+    showMessage('Jobs exported successfully as ' + format.toUpperCase(), 'success');
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Import jobs
+async function importJobs() {
+  if (!isAdmin) {
+    showMessage('Only administrators can import data', 'warning');
+    return;
+  }
+  
+  const fileInput = document.getElementById('importFile');
+  
+  if (!fileInput.files.length) {
+    showMessage('Please select a CSV file first', 'warning');
+    return;
+  }
+  
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  
+  try {
+    showMessage('Importing jobs...', 'info');
+    
+    const res = await axios.post('/api/jobs/import', formData, {
+      headers: {
+        ...authHeaders,
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    const summary = res.data;
+    const msg = `Import completed: ${summary.imported || 0}/${summary.totalRows || 0} rows imported` +
+      (summary.failed ? `, ${summary.failed} failed` : '');
+    
+    showMessage(msg, summary.failed ? 'warning' : 'success');
+    
+    if (summary.errors && summary.errors.length) {
+      console.warn('Import errors:', summary.errors);
+      
+      // Show first few errors
+      const errorList = summary.errors.slice(0, 5).map(e => `- ${e}`).join('\n');
+      alert('Import had some errors:\n\n' + errorList + 
+        (summary.errors.length > 5 ? '\n... and more. Check console for details.' : ''));
+    }
+    
+    // Clear file input
+    fileInput.value = '';
+    
+    // Reload statistics
+    await loadJobStats();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Load job statistics
+async function loadJobStatsPage() {
+  try {
+    const res = await axios.get('/api/jobs/stats', { headers: authHeaders });
+    renderJobStats(res.data);
+  } catch(e) {
+    showMessage('Failed to load statistics: ' + resolveError(e), 'danger');
+  }
+}
+
+// Initialize page
+async function initPage() {
+  if (isAdmin) {
+    await loadJobStatsPage();
+  }
+}
+
+// Start when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPage);
+} else {
+  initPage();
+}
+</script>
+
+</body>
+</html>

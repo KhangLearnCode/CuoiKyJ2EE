@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Job Details - FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <div th:replace="~{common-styles.fragment :: styles}"></div>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+      <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-door"></i> Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-briefcase"></i> Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="logout()">
+              <i class="bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
+      <div class="pt-3 pb-2 mb-3">
+        <h1 class="h3">Job Details</h1>
+        <p class="text-muted small">View and manage job details, checklist, parts, images, and signature</p>
+      </div>
+
+      <div id="messageBox" class="alert d-none"></div>
+
+      <!-- Sub Navigation -->
+      <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
+
+      <!-- Job Details Content -->
+      <div class="row g-4">
+        <div class="col-lg-4">
+          <!-- Job Selection -->
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Select Job</h6>
+            </div>
+            <div class="card-body">
+              <select id="jobSelect" class="form-select mb-2" onchange="loadJobDetails()">
+                <option value="">Choose a job...</option>
+              </select>
+              <div class="small text-muted">
+                <span id="jobCount">0</span> jobs available
+              </div>
+            </div>
+          </div>
+
+          <!-- Filter Jobs -->
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Filter Jobs</h6>
+            </div>
+            <div class="card-body">
+              <input id="filterKeyword" type="text" class="form-control mb-2" placeholder="Search..."/>
+              <select id="filterStatus" class="form-select mb-2">
+                <option value="">All Status</option>
+                <option value="CREATED">CREATED</option>
+                <option value="ASSIGNED">ASSIGNED</option>
+                <option value="IN_PROGRESS">IN_PROGRESS</option>
+                <option value="COMPLETED">COMPLETED</option>
+                <option value="CANCELLED">CANCELLED</option>
+              </select>
+              <select id="filterPriority" class="form-select mb-2">
+                <option value="">All Priority</option>
+                <option value="URGENT">URGENT</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+              <button class="btn btn-primary w-100" onclick="loadJobsList()">Load Jobs</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-8">
+          <!-- Job Details Display -->
+          <div id="jobDetailsBox" class="card custom-block">
+            <div class="card-body">
+              <div class="text-muted">Select a job to view details</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div th:replace="~{common-scripts.fragment :: scripts}"></div>
+
+<script>
+// Page-specific state
+let currentJobId = null;
+
+// Load jobs list for dropdown
+async function loadJobsList() {
+  try {
+    const params = buildJobQueryParams();
+    const res = await axios.get('/api/jobs', { headers: authHeaders, params });
+    state.jobs = res.data.content || [];
+    
+    const select = document.getElementById('jobSelect');
+    select.innerHTML = '<option value="">Choose a job...</option>' +
+      state.jobs.map(j => `<option value="${j.id}">${j.jobCode} - ${j.title} (${j.status})</option>`).join('');
+    
+    document.getElementById('jobCount').textContent = state.jobs.length;
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Load job details
+async function loadJobDetails() {
+  const select = document.getElementById('jobSelect');
+  const jobId = select.value;
+  
+  if (!jobId) {
+    document.getElementById('jobDetailsBox').innerHTML = 
+      '<div class="card-body"><div class="text-muted">Select a job to view details</div></div>';
+    return;
+  }
+  
+  currentJobId = jobId;
+  
+  try {
+    const res = await axios.get('/api/jobs/' + jobId, { headers: authHeaders });
+    state.selected = res.data;
+    renderJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Render job details
+function renderJobDetails() {
+  cleanupPreviewUrls();
+  const box = document.getElementById('jobDetailsBox');
+  const j = state.selected;
+  
+  if (!j) {
+    box.innerHTML = '<div class="card-body"><div class="text-muted">No job selected</div></div>';
+    return;
+  }
+  
+  const partOptions = state.parts.filter(x => x.active)
+    .map(x => `<option value="${x.id}">${x.partCode} (${x.stockQuantity})</option>`).join('');
+  
+  const checklist = (j.checklist || []).map(i => `
+    <div class="border rounded p-2 mb-2">
+      <div><strong>${i.itemName}</strong> - ${i.completed ? 'DONE' : 'TODO'}</div>
+      <div class="small text-muted">${i.note || ''}</div>
+      <button class="btn btn-sm ${i.completed ? 'btn-outline-warning' : 'btn-outline-success'}" 
+        onclick="toggleChecklist(${j.id},${i.id},${!i.completed})">
+        ${i.completed ? 'Undo' : 'Done'}
+      </button>
+    </div>
+  `).join('') || '<div class="text-muted">No checklist items</div>';
+  
+  const parts = (j.usedParts || []).map(u => 
+    `<li>${u.partCode} - ${u.quantityUsed} ${u.unit} (${u.usedBy || 'system'})</li>`
+  ).join('') || '<li>No part usage recorded</li>';
+  
+  const timeline = (j.timeline || []).map(t => 
+    `<li><strong>${t.activityType}:</strong> ${t.message}</li>`
+  ).join('') || '<li>No timeline entries</li>';
+  
+  const images = (j.images || []).map(img => `
+    <div class="col-6">
+      <div class="border rounded p-2 h-100">
+        <img class="job-image mb-2" alt="${escapeHtml(img.fileName)}" data-protected-src="${img.imageUrl}"/>
+        <div class="small fw-semibold text-break">${escapeHtml(img.fileName)}</div>
+        <div class="small text-muted">${escapeHtml(img.uploadedBy || 'system')} 
+          ${img.uploadedAt ? '- ' + formatDateTime(img.uploadedAt) : ''}</div>
+      </div>
+    </div>
+  `).join('') || '<div class="col-12"><div class="text-muted">No uploaded images</div></div>';
+  
+  const signaturePreview = j.signatureImageUrl
+    ? `<img class="img-fluid border rounded p-2 bg-white" alt="signature" data-protected-src="${j.signatureImageUrl}"/>
+       <div class="small text-muted mt-1">Signed by ${escapeHtml(j.signatureSignedBy || '')} 
+         ${j.signatureSignedAt ? 'at ' + formatDateTime(j.signatureSignedAt) : ''}</div>`
+    : '<div class="text-muted">No signature captured</div>';
+  
+  box.innerHTML = `
+    <div class="card-header">
+      <h5 class="mb-0">${j.jobCode} - ${j.title}</h5>
+      <div class="small text-muted">${j.status} | ${j.assignedUsername || 'Unassigned'}</div>
+    </div>
+    <div class="card-body">
+      <!-- Job Info -->
+      <div class="mb-4">
+        <h6>Job Information</h6>
+        <p class="mb-1"><strong>Customer:</strong> ${escapeHtml(j.customerName)}</p>
+        <p class="mb-1"><strong>Address:</strong> ${escapeHtml(j.serviceAddress)}</p>
+        <p class="mb-1"><strong>Priority:</strong> <span class="badge bg-secondary">${j.priority}</span></p>
+        <p class="mb-1"><strong>Scheduled:</strong> ${formatDateTime(j.scheduledDate)}</p>
+        <p class="mb-0"><strong>Description:</strong> ${escapeHtml(j.description || 'N/A')}</p>
+      </div>
+
+      <!-- Assign Technician (Admin Only) -->
+      ${isAdmin && (j.status !== 'COMPLETED' && j.status !== 'CANCELLED') ? `
+      <div class="mb-4">
+        <h6>Assign Technician</h6>
+        <form onsubmit="assignJob(event,${j.id})">
+          <select id="assignTechId" class="form-select mb-2" required>
+            <option value="">Select technician</option>
+            ${state.technicians.map(t => 
+              `<option value="${t.id}" ${j.assignedUserId === t.id ? 'selected' : ''}>${t.username}</option>`
+            ).join('')}
+          </select>
+          <input id="assignNote" class="form-control mb-2" placeholder="Assignment note"/>
+          <button class="btn btn-warning">Assign Job</button>
+        </form>
+      </div>
+      ` : ''}
+
+      <!-- Update Job Status (Technician Only) -->
+      ${!isAdmin && (j.status !== 'COMPLETED' && j.status !== 'CANCELLED') && j.assignedUserId === user.id ? `
+      <div class="mb-4">
+        <h6>Update Job Status</h6>
+        <div class="small text-muted mb-2">Current status: <strong>${j.status}</strong></div>
+        <div class="d-flex gap-2 flex-wrap">
+          ${j.status === 'ASSIGNED' ? `
+            <button class="btn btn-primary" onclick="updateJobStatus(${j.id},'IN_PROGRESS')">Start Work</button>
+            <button class="btn btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+          ` : ''}
+          ${j.status === 'IN_PROGRESS' ? `
+            <button class="btn btn-success" onclick="updateJobStatus(${j.id},'COMPLETED')">Complete Job</button>
+            <button class="btn btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+          ` : ''}
+          ${j.status === 'CREATED' ? `
+            <button class="btn btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+          ` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      <!-- Export -->
+      <div class="mb-4">
+        <button class="btn btn-outline-danger" onclick="downloadReport(${j.id})">
+          <i class="bi-file-pdf"></i> Export PDF Report
+        </button>
+      </div>
+
+      <hr/>
+
+      <!-- Checklist -->
+      <div class="mb-4">
+        <h6>Checklist</h6>
+        ${isAdmin ? `
+        <form onsubmit="addChecklist(event,${j.id})" class="mb-3">
+          <input id="checkName" class="form-control mb-2" placeholder="New checklist item" required/>
+          <input id="checkNote" class="form-control mb-2" placeholder="Note (optional)"/>
+          <button class="btn btn-primary">Add Item</button>
+        </form>
+        ` : ''}
+        ${checklist}
+      </div>
+
+      <hr/>
+
+      <!-- Use Part -->
+      <div class="mb-4">
+        <h6>Parts Usage</h6>
+        <form onsubmit="usePart(event,${j.id})" class="mb-3">
+          <select id="usePartId" class="form-select mb-2" required>
+            <option value="">Select part</option>
+            ${partOptions}
+          </select>
+          <input id="useQty" type="number" min="1" class="form-control mb-2" placeholder="Quantity" required/>
+          <input id="useNote" class="form-control mb-2" placeholder="Note (optional)"/>
+          <button class="btn btn-dark">Record Part Usage</button>
+        </form>
+        <ul class="mb-0">${parts}</ul>
+      </div>
+
+      <hr/>
+
+      <!-- Upload Images -->
+      <div class="mb-4">
+        <h6>Job Images</h6>
+        <form onsubmit="uploadImages(event,${j.id})" class="mb-3">
+          <input id="jobImagesInput" type="file" class="form-control mb-2" accept="image/*" multiple required/>
+          <button class="btn btn-primary">Upload Images</button>
+        </form>
+        <div class="row g-2">${images}</div>
+      </div>
+
+      <hr/>
+
+      <!-- Electronic Signature -->
+      <div class="mb-4">
+        <h6>Electronic Signature</h6>
+        <canvas id="signatureCanvas" class="signature-canvas mb-2"></canvas>
+        <div class="d-flex gap-2 mb-3">
+          <button class="btn btn-outline-secondary" onclick="clearSignatureCanvas()">Clear</button>
+          <button class="btn btn-success" onclick="saveSignature(${j.id})">Save Signature</button>
+        </div>
+        <div id="signaturePreviewBox">${signaturePreview}</div>
+      </div>
+
+      <hr/>
+
+      <!-- Timeline -->
+      <div>
+        <h6>Activity Timeline</h6>
+        <ul class="mb-0">${timeline}</ul>
+      </div>
+    </div>
+  `;
+  
+  setupSignatureCanvas();
+  hydrateProtectedImages();
+}
+
+// Signature Canvas Setup
+function setupSignatureCanvas() {
+  const canvas = document.getElementById('signatureCanvas');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 180;
+  
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  
+  let drawing = false;
+  
+  function startDrawing(e) {
+    drawing = true;
+    signatureState.hasStroke = true;
+    const point = getCanvasPoint(canvas, e);
+    ctx.beginPath();
+    ctx.moveTo(point.x, point.y);
+  }
+  
+  function draw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const point = getCanvasPoint(canvas, e);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  }
+  
+  function stopDrawing() {
+    drawing = false;
+  }
+  
+  // Mouse events
+  canvas.addEventListener('mousedown', startDrawing);
+  canvas.addEventListener('mousemove', draw);
+  canvas.addEventListener('mouseup', stopDrawing);
+  canvas.addEventListener('mouseout', stopDrawing);
+  
+  // Touch events
+  canvas.addEventListener('touchstart', (e) => {
+    startDrawing(e.touches[0]);
+  });
+  canvas.addEventListener('touchmove', (e) => {
+    draw(e.touches[0]);
+  });
+  canvas.addEventListener('touchend', stopDrawing);
+}
+
+function getCanvasPoint(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX || event.pageX) - rect.left,
+    y: (event.clientY || event.pageY) - rect.top
+  };
+}
+
+function clearSignatureCanvas() {
+  const canvas = document.getElementById('signatureCanvas');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  signatureState.hasStroke = false;
+}
+
+async function saveSignature(jobId) {
+  if (!signatureState.hasStroke) {
+    showMessage('Please draw a signature first', 'warning');
+    return;
+  }
+  
+  const canvas = document.getElementById('signatureCanvas');
+  canvas.toBlob(async (blob) => {
+    try {
+      const formData = new FormData();
+      formData.append('signature', blob, 'signature.png');
+      
+      await axios.post('/api/jobs/' + jobId + '/signature', formData, {
+        headers: { ...authHeaders, 'Content-Type': 'multipart/form-data' }
+      });
+      
+      showMessage('Signature saved', 'success');
+      clearSignatureCanvas();
+      await loadJobDetails();
+    } catch(e) {
+      showMessage(resolveError(e), 'danger');
+    }
+  }, 'image/png');
+}
+
+// Job Actions
+async function assignJob(e, jobId) {
+  e.preventDefault();
+  
+  try {
+    const techId = document.getElementById('assignTechId').value;
+    const note = document.getElementById('assignNote').value.trim();
+    
+    await axios.post('/api/jobs/' + jobId + '/assign', { userId: techId, note }, 
+      { headers: authHeaders });
+    
+    showMessage('Job assigned successfully', 'success');
+    await loadJobsList();
+    await loadJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+async function updateJobStatus(jobId, newStatus) {
+  try {
+    await axios.patch('/api/jobs/' + jobId + '/status', { status: newStatus }, 
+      { headers: authHeaders });
+    
+    showMessage('Job status updated to ' + newStatus, 'success');
+    await loadJobsList();
+    await loadJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+async function addChecklist(e, jobId) {
+  e.preventDefault();
+  
+  try {
+    const name = document.getElementById('checkName').value.trim();
+    const note = document.getElementById('checkNote').value.trim();
+    
+    await axios.post('/api/jobs/' + jobId + '/checklist', { itemName: name, note }, 
+      { headers: authHeaders });
+    
+    showMessage('Checklist item added', 'success');
+    await loadJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+async function toggleChecklist(jobId, itemId, completed) {
+  try {
+    await axios.patch('/api/jobs/' + jobId + '/checklist/' + itemId, { completed }, 
+      { headers: authHeaders });
+    
+    showMessage('Checklist item updated', 'success');
+    await loadJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+async function usePart(e, jobId) {
+  e.preventDefault();
+  
+  try {
+    const partId = Number(document.getElementById('usePartId').value);
+    const qty = Number(document.getElementById('useQty').value);
+    const note = document.getElementById('useNote').value.trim();
+    
+    await axios.post('/api/jobs/' + jobId + '/parts-usage', 
+      { partId, quantityUsed: qty, note }, { headers: authHeaders });
+    
+    showMessage('Part usage recorded', 'success');
+    await loadParts();
+    await loadJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+async function uploadImages(e, jobId) {
+  e.preventDefault();
+  
+  const fileInput = document.getElementById('jobImagesInput');
+  if (!fileInput.files.length) {
+    showMessage('Please select images first', 'warning');
+    return;
+  }
+  
+  try {
+    const formData = new FormData();
+    for (const file of fileInput.files) {
+      formData.append('images', file);
+    }
+    
+    await axios.post('/api/jobs/' + jobId + '/images', formData, {
+      headers: { ...authHeaders, 'Content-Type': 'multipart/form-data' }
+    });
+    
+    showMessage('Images uploaded successfully', 'success');
+    fileInput.value = '';
+    await loadJobDetails();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+async function downloadReport(jobId) {
+  try {
+    const res = await axios.get('/api/jobs/' + jobId + '/pdf', {
+      headers: authHeaders,
+      responseType: 'blob'
+    });
+    
+    const url = URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'job-' + jobId + '-report.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    
+    showMessage('PDF report downloaded', 'success');
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Initialize page
+async function initPage() {
+  await loadTechnicians();
+  await loadParts();
+  await loadJobsList();
+  
+  // Load job from URL parameter if present
+  const urlParams = new URLSearchParams(window.location.search);
+  const jobId = urlParams.get('id');
+  if (jobId) {
+    document.getElementById('jobSelect').value = jobId;
+    await loadJobDetails();
+  }
+}
+
+// Start when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPage);
+} else {
+  initPage();
+}
+</script>
+
+</body>
+</html>

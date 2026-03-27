@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FSM Cloud Ops</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #10b981;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --text: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            overflow-x: hidden;
+        }
+        .floating-shapes { position: fixed; inset: 0; z-index: -1; }
+        .shape {
+            position: absolute; border-radius: 50%; filter: blur(40px);
+            background: rgba(99, 102, 241, 0.12); animation: float 20s infinite ease-in-out;
+        }
+        .shape:nth-child(1) { width: 260px; height: 260px; top: 10%; left: 8%; }
+        .shape:nth-child(2) { width: 180px; height: 180px; top: 58%; right: 10%; animation-delay: 4s; }
+        .shape:nth-child(3) { width: 220px; height: 220px; bottom: 8%; left: 32%; animation-delay: 9s; }
+        @keyframes float { 0%,100%{transform:translate(0,0)} 50%{transform:translate(25px,-20px)} }
+
+        nav {
+            position: sticky; top: 0; z-index: 1000;
+            background: rgba(15, 23, 42, .85); backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(99,102,241,.2);
+        }
+        .nav-wrap {
+            max-width: 1200px; margin: 0 auto; padding: 12px 16px;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        .logo { font-size: 1.2rem; font-weight: 800; background: var(--gradient); -webkit-background-clip:text; -webkit-text-fill-color: transparent; }
+        .nav-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .btn {
+            border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer;
+            text-decoration: none; font-weight: 600; display: inline-block;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-ghost { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid rgba(99,102,241,.25); }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .hidden { display: none !important; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+        .hero {
+            margin-top: 8px; border-radius: 16px; padding: 28px;
+            background: linear-gradient(140deg, rgba(99,102,241,.18), rgba(16,185,129,.10));
+            border: 1px solid rgba(99,102,241,.22);
+        }
+        .hero h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.8rem); }
+        .hero p { margin: 0; color: var(--text-secondary); }
+
+        .grid { display: grid; gap: 16px; margin-top: 18px; }
+        .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        @media (max-width: 900px){ .grid-3,.grid-2{ grid-template-columns: 1fr; } }
+
+        .card {
+            background: rgba(30,41,59,.75);
+            border: 1px solid rgba(99,102,241,.18);
+            border-radius: 14px; padding: 16px;
+        }
+        .label { color: var(--text-secondary); font-size: .9rem; }
+        .value { font-size: 1.8rem; font-weight: 800; margin-top: 4px; }
+        .mini { font-size: 1.1rem; font-weight: 700; margin-top: 4px; }
+        .card, .status-item, .hero, .pre, .container, .nav-wrap { color: #ffffff; }
+        .btn-ghost { color: #ffffff; }
+        .status-grid { display:grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap:10px; }
+        @media (max-width: 900px){ .status-grid{ grid-template-columns: repeat(2,minmax(0,1fr)); } }
+        .status-item {
+            border: 1px solid rgba(99,102,241,.22); border-radius: 10px; padding: 10px;
+            background: rgba(15,23,42,.55);
+        }
+        .status-item .k { font-size:.8rem; color: var(--text-secondary); }
+        .status-item .v { font-size:1.1rem; font-weight:700; margin-top:4px; }
+        .pre {
+            white-space: pre-wrap; min-height: 180px;
+            background: rgba(15,23,42,.65); border: 1px solid rgba(99,102,241,.2);
+            border-radius: 10px; padding: 12px; color: #dbeafe;
+        }
+    </style>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<nav>
+    <div class="nav-wrap">
+        <div class="logo">FSM Cloud Ops</div>
+        <div id="user-info" class="label hidden"></div>
+        <div class="nav-actions">
+            <a id="btn-login" class="btn btn-ghost" href="/login">Login</a>
+            <a id="btn-register" class="btn btn-primary" href="/register">Create account</a>
+            <a id="btn-jobs" class="btn btn-primary hidden" href="/jobs">Open workspace</a>
+            <button id="btn-logout" class="btn btn-danger hidden" onclick="logout()">Logout</button>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <section class="hero">
+        <h1>Modern Field Service Dashboard</h1>
+        <p>Theo dõi trạng thái công việc, cảnh báo tồn kho và điều phối kỹ thuật viên theo thời gian thực.</p>
+    </section>
+
+    <section class="grid grid-3">
+        <div class="card">
+            <div class="label">Total Jobs</div>
+            <div class="value" id="homeStatTotal">--</div>
+        </div>
+        <div class="card">
+            <div class="label">In Progress</div>
+            <div class="value" id="homeStatInProgressOnly">--</div>
+        </div>
+        <div class="card">
+            <div class="label">Urgent</div>
+            <div class="value" id="homeStatUrgentOnly">--</div>
+        </div>
+    </section>
+
+    <section class="card" style="margin-top:16px;">
+        <div class="mini">Chi tiết trạng thái công việc</div>
+        <div class="status-grid" style="margin-top:10px;">
+            <div class="status-item"><div class="k">Created</div><div class="v" id="homeCreated">0</div></div>
+            <div class="status-item"><div class="k">Assigned</div><div class="v" id="homeAssigned">0</div></div>
+            <div class="status-item"><div class="k">In Progress</div><div class="v" id="homeInProgress">0</div></div>
+            <div class="status-item"><div class="k">Completed</div><div class="v" id="homeCompleted">0</div></div>
+            <div class="status-item"><div class="k">Cancelled</div><div class="v" id="homeCancelled">0</div></div>
+        </div>
+    </section>
+
+    <section class="grid grid-2">
+        <div class="card">
+            <div class="mini">Quick Actions</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+                <a class="btn btn-primary" href="/jobs">Go to Jobs Workspace</a>
+                <button class="btn btn-ghost" onclick="testAccess('/api/test/user')">Test user access</button>
+                <button class="btn btn-ghost" onclick="testAccess('/api/test/admin')">Test admin access</button>
+            </div>
+        </div>
+        <div class="card">
+            <div class="mini">API Result</div>
+            <div id="result" class="pre">Ready to verify authentication and API access.</div>
+        </div>
+    </section>
+</div>
+
+<script>
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user && user.token) {
+        document.getElementById('user-info').textContent = user.username + ' | ' + user.roles.join(', ');
+        document.getElementById('user-info').classList.remove('hidden');
+        document.getElementById('btn-login').classList.add('hidden');
+        document.getElementById('btn-register').classList.add('hidden');
+        document.getElementById('btn-jobs').classList.remove('hidden');
+        document.getElementById('btn-logout').classList.remove('hidden');
+        loadHomeStats();
+    }
+
+    function logout() {
+        localStorage.removeItem('user');
+        window.location.reload();
+    }
+
+    async function testAccess(url) {
+        const resultDiv = document.getElementById('result');
+        resultDiv.textContent = 'Loading...';
+        const headers = {};
+        if (user && user.token) headers['Authorization'] = 'Bearer ' + user.token;
+        try {
+            const response = await axios.get(url, { headers });
+            resultDiv.textContent = typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2);
+        } catch (error) {
+            resultDiv.textContent = error.response?.data?.message || error.message;
+        }
+    }
+
+    async function loadHomeStats() {
+        if (!user || !user.token) return;
+        try {
+            const res = await axios.get('/api/jobs/stats', { headers: { Authorization: 'Bearer ' + user.token } });
+            const stats = res.data || {};
+            const byStatus = stats.byStatus || {};
+            const byPriority = stats.byPriority || {};
+            document.getElementById('homeStatTotal').textContent = stats.total ?? '--';
+            document.getElementById('homeStatInProgressOnly').textContent = byStatus.IN_PROGRESS ?? 0;
+            document.getElementById('homeStatUrgentOnly').textContent = byPriority.URGENT ?? 0;
+            document.getElementById('homeCreated').textContent = byStatus.CREATED ?? 0;
+            document.getElementById('homeAssigned').textContent = byStatus.ASSIGNED ?? 0;
+            document.getElementById('homeInProgress').textContent = byStatus.IN_PROGRESS ?? 0;
+            document.getElementById('homeCompleted').textContent = byStatus.COMPLETED ?? 0;
+            document.getElementById('homeCancelled').textContent = byStatus.CANCELLED ?? 0;
+        } catch (e) {
+            const fallback = '--';
+            document.getElementById('homeStatTotal').textContent = fallback;
+            document.getElementById('homeStatInProgressOnly').textContent = fallback;
+            document.getElementById('homeStatUrgentOnly').textContent = fallback;
+            document.getElementById('homeCreated').textContent = fallback;
+            document.getElementById('homeAssigned').textContent = fallback;
+            document.getElementById('homeInProgress').textContent = fallback;
+            document.getElementById('homeCompleted').textContent = fallback;
+            document.getElementById('homeCancelled').textContent = fallback;
+        }
+    }
+</script>
+</body>
+</html>

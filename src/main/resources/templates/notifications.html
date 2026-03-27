@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Notifications - FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <div th:replace="~{common-styles.fragment :: styles}"></div>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+      <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-door"></i> Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-briefcase"></i> Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="logout()">
+              <i class="bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
+      <div class="pt-3 pb-2 mb-3">
+        <h1 class="h3">Notifications</h1>
+        <p class="text-muted small">Manage your notifications and alerts</p>
+      </div>
+
+      <div id="messageBox" class="alert d-none"></div>
+
+      <!-- Sub Navigation -->
+      <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
+
+      <!-- Notifications Content -->
+      <div class="row g-4">
+        <!-- Left Column: Filters & Actions -->
+        <div class="col-lg-4">
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Filter Notifications</h6>
+            </div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small">Status</label>
+                <select id="filterStatus" class="form-select" onchange="filterNotifications()">
+                  <option value="">All</option>
+                  <option value="unread">Unread Only</option>
+                  <option value="read">Read Only</option>
+                </select>
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label small">Type</label>
+                <select id="filterType" class="form-select" onchange="filterNotifications()">
+                  <option value="">All Types</option>
+                  <option value="JOB_ASSIGNED">Job Assigned</option>
+                  <option value="JOB_DUE_SOON">Job Due Soon</option>
+                  <option value="JOB_UPDATED">Job Updated</option>
+                  <option value="LOW_STOCK">Low Stock</option>
+                </select>
+              </div>
+              
+              <button class="btn btn-secondary w-100" onclick="loadNotificationsPage()">
+                <i class="bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+          </div>
+
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Quick Actions</h6>
+            </div>
+            <div class="card-body">
+              <button class="btn btn-primary w-100 mb-2" onclick="markAllNotificationsRead()">
+                <i class="bi-check2-all"></i> Mark All as Read
+              </button>
+              <button class="btn btn-outline-danger w-100" onclick="clearAllReadNotifications()">
+                <i class="bi-trash"></i> Clear All Read
+              </button>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="card custom-block mt-3">
+            <div class="card-header">
+              <h6 class="mb-0">Statistics</h6>
+            </div>
+            <div class="card-body">
+              <div class="row text-center">
+                <div class="col-6 mb-2">
+                  <div class="small text-muted">Total</div>
+                  <div class="h4 mb-0" id="statTotal">0</div>
+                </div>
+                <div class="col-6 mb-2">
+                  <div class="small text-muted">Unread</div>
+                  <div class="h4 mb-0 text-danger" id="statUnread">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Notifications List -->
+        <div class="col-lg-8">
+          <div class="card custom-block">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h6 class="mb-0">Notifications</h6>
+              <span class="badge bg-primary" id="notificationCount">0</span>
+            </div>
+            <div class="card-body">
+              <div id="notificationList">
+                <div class="text-muted">Loading notifications...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div th:replace="~{common-scripts.fragment :: scripts}"></div>
+
+<script>
+// Filtered notifications
+let filteredNotifications = [];
+
+// Load notifications from API
+async function loadNotificationsPage() {
+  try {
+    const [listRes, countRes] = await Promise.all([
+      axios.get('/api/notifications', { headers: authHeaders }),
+      axios.get('/api/notifications/unread-count', { headers: authHeaders })
+    ]);
+    
+    state.notifications = listRes.data.content || listRes.data || [];
+    
+    const unreadCount = countRes.data?.count || 0;
+    renderNotificationBadge(unreadCount);
+    
+    // Update stats
+    document.getElementById('statTotal').textContent = state.notifications.length;
+    document.getElementById('statUnread').textContent = unreadCount;
+    
+    filterNotifications();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Filter notifications
+function filterNotifications() {
+  const statusFilter = document.getElementById('filterStatus').value;
+  const typeFilter = document.getElementById('filterType').value;
+  
+  filteredNotifications = state.notifications.filter(n => {
+    // Filter by status
+    if (statusFilter === 'unread' && n.read) return false;
+    if (statusFilter === 'read' && !n.read) return false;
+    
+    // Filter by type
+    if (typeFilter && n.type !== typeFilter) return false;
+    
+    return true;
+  });
+  
+  renderNotifications();
+}
+
+// Render notifications list
+function renderNotifications() {
+  const box = document.getElementById('notificationList');
+  const count = document.getElementById('notificationCount');
+  
+  count.textContent = filteredNotifications.length;
+  
+  if (!filteredNotifications.length) {
+    box.innerHTML = '<div class="text-muted text-center py-4">No notifications to display</div>';
+    return;
+  }
+  
+  box.innerHTML = filteredNotifications.map(n => {
+    const typeIcon = {
+      'JOB_ASSIGNED': 'bi-person-check',
+      'JOB_DUE_SOON': 'bi-clock',
+      'JOB_UPDATED': 'bi-pencil-square',
+      'LOW_STOCK': 'bi-exclamation-triangle'
+    }[n.type] || 'bi-bell';
+    
+    const typeBadge = {
+      'JOB_ASSIGNED': 'bg-info',
+      'JOB_DUE_SOON': 'bg-warning',
+      'JOB_UPDATED': 'bg-primary',
+      'LOW_STOCK': 'bg-danger'
+    }[n.type] || 'bg-secondary';
+    
+    return `
+      <div class="notification-item ${n.read ? '' : 'unread'}">
+        <div class="d-flex gap-3">
+          <div class="flex-shrink-0">
+            <i class="${typeIcon}" style="font-size: 1.5rem;"></i>
+          </div>
+          <div class="flex-grow-1">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <div class="fw-semibold">${escapeHtml(n.title)}</div>
+              <span class="badge ${typeBadge}">${n.type}</span>
+            </div>
+            <div class="small mb-2">${escapeHtml(n.message)}</div>
+            <div class="small text-muted mb-2">
+              <i class="bi-clock"></i> ${formatDateTime(n.createdAt)}
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+              ${n.type === 'LOW_STOCK' && n.partId ? `
+                <button class="btn btn-sm btn-outline-primary" onclick="openLowStockPart(${n.partId}, ${n.id})">
+                  <i class="bi-box-seam"></i> View Part
+                </button>
+              ` : ''}
+              ${n.type !== 'LOW_STOCK' && n.jobId ? `
+                <button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId}, ${n.id})">
+                  <i class="bi-briefcase"></i> View Job
+                </button>
+              ` : ''}
+              ${!n.read ? `
+                <button class="btn btn-sm btn-outline-success" onclick="markNotificationRead(${n.id})">
+                  <i class="bi-check"></i> Mark as Read
+                </button>
+              ` : ''}
+              <button class="btn btn-sm btn-outline-danger" onclick="clearNotification(${n.id})">
+                <i class="bi-trash"></i> Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Mark single notification as read
+async function markNotificationRead(id) {
+  try {
+    await axios.patch('/api/notifications/' + id + '/read', {}, { headers: authHeaders });
+    showMessage('Notification marked as read', 'success');
+    await loadNotificationsPage();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Mark all notifications as read
+async function markAllNotificationsRead() {
+  try {
+    await axios.patch('/api/notifications/read-all', {}, { headers: authHeaders });
+    showMessage('All notifications marked as read', 'success');
+    await loadNotificationsPage();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Clear single notification
+async function clearNotification(id) {
+  if (!confirm('Are you sure you want to clear this notification?')) return;
+  
+  try {
+    await axios.delete('/api/notifications/' + id, { headers: authHeaders });
+    showMessage('Notification cleared', 'success');
+    await loadNotificationsPage();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Clear all read notifications
+async function clearAllReadNotifications() {
+  const readNotifications = state.notifications.filter(n => n.read);
+  
+  if (readNotifications.length === 0) {
+    showMessage('No read notifications to clear', 'info');
+    return;
+  }
+  
+  if (!confirm(`Clear ${readNotifications.length} read notification(s)?`)) return;
+  
+  try {
+    await Promise.all(
+      readNotifications.map(n => 
+        axios.delete('/api/notifications/' + n.id, { headers: authHeaders })
+      )
+    );
+    showMessage('Read notifications cleared', 'success');
+    await loadNotificationsPage();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Open job from notification
+async function openNotificationJob(jobId, notificationId) {
+  try {
+    if (notificationId) {
+      await axios.patch('/api/notifications/' + notificationId + '/read', {}, { headers: authHeaders });
+    }
+    await loadNotificationsPage();
+    
+    // Redirect to job details
+    window.location.href = '/jobs/details?id=' + jobId;
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Open low stock part
+async function openLowStockPart(partId, notificationId) {
+  if (!partId) {
+    showMessage('Part not found in notification', 'warning');
+    return;
+  }
+  
+  try {
+    if (notificationId) {
+      await axios.patch('/api/notifications/' + notificationId + '/read', {}, { headers: authHeaders });
+    }
+    await loadNotificationsPage();
+    
+    // Redirect to parts management
+    window.location.href = '/jobs/parts-management?editPartId=' + partId;
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Initialize page
+async function initPage() {
+  await loadNotificationsPage();
+  
+  // Start WebSocket for real-time notifications
+  connectWebSocket();
+  
+  // Auto-refresh every 30 seconds
+  setInterval(loadNotificationsPage, 30000);
+}
+
+// Start when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPage);
+} else {
+  initPage();
+}
+</script>
+
+</body>
+</html>

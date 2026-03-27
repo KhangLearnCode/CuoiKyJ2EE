@@ -1,0 +1,325 @@
+<!-- Common Scripts Fragment for FSM Jobs Pages -->
+<div th:fragment="scripts">
+<script>
+// Authentication & User
+const user = JSON.parse(localStorage.getItem('user'));
+if (!user || !user.token) window.location.href = '/login';
+const isAdmin = user.roles.includes('ROLE_ADMIN');
+const authHeaders = { Authorization: 'Bearer ' + user.token };
+
+// Global State
+const state = {
+  jobs: [],
+  selected: null,
+  parts: [],
+  technicians: [],
+  previewUrls: [],
+  notifications: [],
+  notificationPanelOpen: false,
+  notificationPoller: null,
+  lookupResult: null,
+  lookupSearchResults: [],
+  scannerInstance: null,
+  scannerRunning: false
+};
+
+const signatureState = { drawing: false, hasStroke: false };
+
+// Utility Functions
+function showMessage(m, t) {
+  const b = document.getElementById('messageBox');
+  if (b) {
+    b.textContent = m;
+    b.className = 'alert alert-' + t;
+  }
+}
+
+function resolveError(e) {
+  return e.response?.data?.message || e.message || 'Error';
+}
+
+function logout() {
+  cleanupPreviewUrls();
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+}
+
+function formatDateTime(v) {
+  return v ? new Date(v).toLocaleString() : '';
+}
+
+function cleanupPreviewUrls() {
+  state.previewUrls.forEach(url => URL.revokeObjectURL(url));
+  state.previewUrls = [];
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value || '';
+  return div.innerHTML;
+}
+
+function toggleSidebar() {
+  document.body.classList.toggle('sidebar-collapsed');
+}
+
+// User Label
+function initUserLabel() {
+  const userLabel = document.getElementById('userLabel');
+  if (userLabel) {
+    userLabel.textContent = user.username + ' - ' + user.roles.join(',');
+  }
+}
+
+// WebSocket Management
+let stompClient = null;
+
+function connectWebSocket() {
+  if (!user || !user.token) return;
+  if (typeof SockJS === 'undefined' || typeof Stomp === 'undefined') return;
+  
+  try {
+    const socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    stompClient.debug = null;
+    
+    stompClient.connect({}, function(frame) {
+      const dest = '/topic/notifications/' + user.username;
+      stompClient.subscribe(dest, function(message) {
+        try {
+          const payload = JSON.parse(message.body);
+          state.notifications.unshift(payload);
+          
+          if (typeof renderNotifications === 'function') renderNotifications();
+          
+          const unread = state.notifications.filter(n => !n.read).length;
+          if (typeof renderNotificationBadge === 'function') {
+            renderNotificationBadge(unread);
+          }
+        } catch(e) {
+          console.warn('Invalid ws payload', e);
+        }
+      });
+    }, function(err) {
+      console.warn('WS connect error', err);
+    });
+  } catch(e) {
+    console.warn('WS init failed', e);
+  }
+}
+
+function disconnectWebSocket() {
+  try {
+    if (stompClient) {
+      stompClient.disconnect();
+      stompClient = null;
+    }
+  } catch(e) {
+    console.warn('Disconnect error', e);
+  }
+}
+
+window.addEventListener('beforeunload', () => {
+  disconnectWebSocket();
+});
+
+// Job Query Parameters
+function buildJobQueryParams() {
+  const params = {};
+  const keywordEl = document.getElementById('filterKeyword');
+  const statusEl = document.getElementById('filterStatus');
+  const priorityEl = document.getElementById('filterPriority');
+  
+  if (keywordEl) {
+    const k = keywordEl.value.trim();
+    if (k) params.keyword = k;
+  }
+  
+  if (statusEl) {
+    const s = statusEl.value;
+    if (s) params.status = s;
+  }
+  
+  if (priorityEl) {
+    const p = priorityEl.value;
+    if (p) params.priority = p;
+  }
+  
+  if (!isAdmin && user.id) {
+    params.assignedUserId = user.id;
+  }
+  
+  return params;
+}
+
+// Load Technicians
+async function loadTechnicians() {
+  try {
+    const res = await axios.get('/api/users/technicians', { headers: authHeaders });
+    state.technicians = res.data || [];
+  } catch(e) {
+    console.warn('Failed to load technicians', e);
+  }
+}
+
+// Load Parts
+async function loadParts() {
+  try {
+    const res = await axios.get('/api/parts', { headers: authHeaders });
+    state.parts = res.data.content || [];
+  } catch(e) {
+    console.warn('Failed to load parts', e);
+  }
+}
+
+// Load Jobs
+async function loadJobs() {
+  try {
+    const params = buildJobQueryParams();
+    const res = await axios.get('/api/jobs', { headers: authHeaders, params });
+    state.jobs = res.data.content || [];
+    
+    const jobCountEl = document.getElementById('jobCount');
+    if (jobCountEl) {
+      jobCountEl.textContent = state.jobs.length;
+    }
+    
+    if (typeof renderJobs === 'function') renderJobs();
+    
+    if (state.selected) {
+      const refreshed = state.jobs.find(x => x.id === state.selected.id);
+      if (refreshed && typeof selectJob === 'function') {
+        await selectJob(refreshed.id);
+        return;
+      }
+    }
+    
+    if (state.jobs.length && !state.selected && typeof selectJob === 'function') {
+      await selectJob(state.jobs[0].id);
+    }
+    
+    if (!state.jobs.length) {
+      state.selected = null;
+      if (typeof renderSelected === 'function') renderSelected();
+    }
+    
+    await loadJobStats();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Load Job Stats
+async function loadJobStats() {
+  try {
+    const params = isAdmin ? {} : { assignedUserId: user.id };
+    const res = await axios.get('/api/jobs/stats', { headers: authHeaders, params });
+    
+    if (typeof renderJobStats === 'function') {
+      renderJobStats(res.data);
+    }
+  } catch(e) {
+    // Keep silent on unauthorized
+  }
+}
+
+// Render Job Stats
+function renderJobStats(stats) {
+  if (!stats) return;
+  
+  const byStatus = stats.byStatus || {};
+  const byPriority = stats.byPriority || {};
+  
+  const elements = {
+    statTotal: stats.total ?? 0,
+    statCreated: byStatus.CREATED ?? 0,
+    statAssigned: byStatus.ASSIGNED ?? 0,
+    statInProgress: byStatus.IN_PROGRESS ?? 0,
+    statCompleted: byStatus.COMPLETED ?? 0,
+    statUrgent: byPriority.URGENT ?? 0,
+    statHigh: byPriority.HIGH ?? 0,
+    statMedium: byPriority.MEDIUM ?? 0,
+    statLow: byPriority.LOW ?? 0
+  };
+  
+  for (const [id, value] of Object.entries(elements)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+}
+
+// Notifications
+async function loadNotifications() {
+  try {
+    const res = await axios.get('/api/notifications', { headers: authHeaders });
+    state.notifications = res.data.content || [];
+    
+    if (typeof renderNotifications === 'function') renderNotifications();
+    
+    const unread = state.notifications.filter(n => !n.read).length;
+    if (typeof renderNotificationBadge === 'function') {
+      renderNotificationBadge(unread);
+    }
+  } catch(e) {
+    console.warn('Failed to load notifications', e);
+  }
+}
+
+function renderNotificationBadge(count) {
+  const badge = document.getElementById('notificationBadge');
+  if (!badge) return;
+  
+  if (count > 0) {
+    badge.textContent = count;
+    badge.classList.remove('d-none');
+  } else {
+    badge.classList.add('d-none');
+  }
+}
+
+function toggleNotifications() {
+  const panel = document.getElementById('notificationPanel');
+  if (!panel) return;
+  
+  state.notificationPanelOpen = !state.notificationPanelOpen;
+  panel.style.display = state.notificationPanelOpen ? 'block' : 'none';
+}
+
+function startNotificationPolling() {
+  if (state.notificationPoller) clearInterval(state.notificationPoller);
+  state.notificationPoller = setInterval(loadNotifications, 15000);
+}
+
+// Protected Image Hydration
+async function hydrateProtectedImages() {
+  const protectedImages = document.querySelectorAll('img[data-protected-src]');
+  for (const img of protectedImages) {
+    const protectedUrl = img.getAttribute('data-protected-src');
+    try {
+      const res = await axios.get(protectedUrl, {
+        headers: authHeaders,
+        responseType: 'blob'
+      });
+      const objectUrl = URL.createObjectURL(res.data);
+      img.src = objectUrl;
+      state.previewUrls.push(objectUrl);
+    } catch(e) {
+      console.warn('Failed to load protected image:', protectedUrl, e);
+    }
+  }
+}
+
+// Initialize on page load
+function initCommon() {
+  initUserLabel();
+  connectWebSocket();
+}
+
+// Auto-initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initCommon);
+} else {
+  initCommon();
+}
+</script>
+</div>

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Parts Management - FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <div th:replace="~{common-styles.fragment :: styles}"></div>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+      <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-door"></i> Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-briefcase"></i> Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="logout()">
+              <i class="bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
+      <div class="pt-3 pb-2 mb-3">
+        <h1 class="h3">Parts & Inventory Management</h1>
+        <p class="text-muted small">Manage parts, track inventory, and generate QR codes</p>
+      </div>
+
+      <div id="messageBox" class="alert d-none"></div>
+
+      <!-- Sub Navigation -->
+      <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
+
+      <!-- Main Content Grid -->
+      <div class="row g-4">
+        <!-- Left Column: Part Form & QR Preview -->
+        <div class="col-lg-5">
+          <!-- Part Form (Admin Only) -->
+          <div class="card custom-block mb-3" id="partFormCard">
+            <div class="card-header">
+              <h6 class="mb-0">Create / Edit Part</h6>
+            </div>
+            <div class="card-body">
+              <form id="partForm" onsubmit="submitPart(event)">
+                <input type="hidden" id="partId"/>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Part Code *</label>
+                  <input type="text" id="partCode" class="form-control" required/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Barcode / QR Value</label>
+                  <input type="text" id="partBarcode" class="form-control" placeholder="Optional"/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Part Name *</label>
+                  <input type="text" id="partName" class="form-control" required/>
+                </div>
+                
+                <div class="row">
+                  <div class="col-6 mb-2">
+                    <label class="form-label small">Unit</label>
+                    <input type="text" id="partUnit" class="form-control" value="pcs"/>
+                  </div>
+                  <div class="col-6 mb-2">
+                    <label class="form-label small">Stock Quantity</label>
+                    <input type="number" id="partStock" class="form-control" min="0" value="0"/>
+                  </div>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Minimum Stock Level</label>
+                  <input type="number" id="partMinStock" class="form-control" min="0" value="0"/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Status</label>
+                  <select id="partActive" class="form-select">
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                </div>
+                
+                <div class="mb-3">
+                  <label class="form-label small">Step Templates (one per line)</label>
+                  <textarea id="partSteps" class="form-control" rows="3" 
+                    placeholder="Step 1&#10;Step 2&#10;Step 3"></textarea>
+                </div>
+                
+                <div class="d-flex gap-2">
+                  <button type="submit" id="partSubmitBtn" class="btn btn-primary">Save Part</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="resetPartForm()">Reset</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- QR Code Preview -->
+          <div id="partQrPanel" class="card custom-block d-none">
+            <div class="card-header">
+              <h6 class="mb-0" id="partQrTitle">QR Code</h6>
+            </div>
+            <div class="card-body text-center">
+              <div id="partQrCode" class="mb-2"></div>
+              <div class="small text-muted" id="partQrValue"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Parts List & Search -->
+        <div class="col-lg-7">
+          <!-- Search Parts -->
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Search Parts</h6>
+            </div>
+            <div class="card-body">
+              <input type="text" id="searchKeyword" class="form-control mb-2" 
+                placeholder="Search by code, barcode, or name..." onkeyup="filterParts()"/>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="showInactiveChk" onchange="filterParts()"/>
+                <label class="form-check-label" for="showInactiveChk">
+                  Show inactive parts
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Parts List -->
+          <div class="card custom-block">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h6 class="mb-0">Parts List</h6>
+              <span class="badge bg-primary" id="partsCount">0</span>
+            </div>
+            <div class="card-body">
+              <div id="partsList">
+                <div class="text-muted">Loading parts...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div th:replace="~{common-scripts.fragment :: scripts}"></div>
+
+<script>
+// Check admin permission
+if (!isAdmin) {
+  document.getElementById('partFormCard').style.display = 'none';
+}
+
+// Filtered parts for display
+let filteredParts = [];
+
+// Load parts from API
+async function loadPartsPage() {
+  try {
+    const res = await axios.get('/api/parts', { headers: authHeaders });
+    state.parts = res.data.content || [];
+    filterParts();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Filter parts based on search
+function filterParts() {
+  const keyword = document.getElementById('searchKeyword').value.toLowerCase().trim();
+  const showInactive = document.getElementById('showInactiveChk').checked;
+  
+  filteredParts = state.parts.filter(p => {
+    // Filter by active status
+    if (!showInactive && !p.active) return false;
+    
+    // Filter by keyword
+    if (keyword) {
+      const matchCode = p.partCode.toLowerCase().includes(keyword);
+      const matchBarcode = p.barcode && p.barcode.toLowerCase().includes(keyword);
+      const matchName = p.partName.toLowerCase().includes(keyword);
+      return matchCode || matchBarcode || matchName;
+    }
+    
+    return true;
+  });
+  
+  renderParts();
+}
+
+// Render parts list
+function renderParts() {
+  const box = document.getElementById('partsList');
+  const count = document.getElementById('partsCount');
+  
+  count.textContent = filteredParts.length;
+  
+  if (!filteredParts.length) {
+    box.innerHTML = '<div class="text-muted">No parts found</div>';
+    return;
+  }
+  
+  box.innerHTML = filteredParts.map(p => {
+    const lowStock = p.stockQuantity <= p.minimumStockLevel;
+    const statusBadge = p.active 
+      ? '<span class="badge bg-success">Active</span>' 
+      : '<span class="badge bg-secondary">Inactive</span>';
+    const stockBadge = lowStock 
+      ? '<span class="badge bg-danger ms-1">Low Stock</span>' 
+      : '';
+    
+    return `
+      <div class="border rounded p-3 mb-2">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <h6 class="mb-1">${escapeHtml(p.partCode)} - ${escapeHtml(p.partName)}</h6>
+            ${p.barcode ? `<div class="small text-muted">Barcode: ${escapeHtml(p.barcode)}</div>` : ''}
+          </div>
+          <div>${statusBadge}${stockBadge}</div>
+        </div>
+        
+        <div class="row mb-2">
+          <div class="col-6">
+            <div class="small text-muted">Stock</div>
+            <div class="fw-semibold">${p.stockQuantity} ${p.unit}</div>
+          </div>
+          <div class="col-6">
+            <div class="small text-muted">Min Level</div>
+            <div class="fw-semibold">${p.minimumStockLevel} ${p.unit}</div>
+          </div>
+        </div>
+        
+        ${p.stepTemplates && p.stepTemplates.length ? `
+        <div class="mb-2">
+          <div class="small text-muted">Step Templates:</div>
+          <ul class="small mb-0">
+            ${p.stepTemplates.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+          </ul>
+        </div>
+        ` : ''}
+        
+        ${isAdmin ? `
+        <div class="d-flex gap-2 flex-wrap mt-2">
+          <button class="btn btn-sm btn-outline-primary" onclick="editPart(${p.id})">
+            <i class="bi-pencil"></i> Edit
+          </button>
+          <button class="btn btn-sm btn-outline-dark" onclick="showPartQr(${p.id})">
+            <i class="bi-qr-code"></i> QR
+          </button>
+          <button class="btn btn-sm btn-outline-success" onclick="adjustStock(${p.id}, 10)">
+            <i class="bi-plus"></i> +10
+          </button>
+          <button class="btn btn-sm btn-outline-warning" onclick="adjustStock(${p.id}, -10)">
+            <i class="bi-dash"></i> -10
+          </button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deletePart(${p.id})">
+            <i class="bi-trash"></i> Delete
+          </button>
+        </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// Submit part form
+async function submitPart(e) {
+  e.preventDefault();
+  
+  const id = document.getElementById('partId').value;
+  const payload = {
+    partCode: document.getElementById('partCode').value.trim(),
+    barcode: document.getElementById('partBarcode').value.trim() || null,
+    partName: document.getElementById('partName').value.trim(),
+    unit: document.getElementById('partUnit').value.trim(),
+    stockQuantity: Number(document.getElementById('partStock').value),
+    minimumStockLevel: Number(document.getElementById('partMinStock').value),
+    active: document.getElementById('partActive').value === 'true',
+    stepTemplates: document.getElementById('partSteps').value
+      .split(/\r?\n/)
+      .map(v => v.trim())
+      .filter(Boolean)
+  };
+  
+  try {
+    const res = id 
+      ? await axios.put('/api/parts/' + id, payload, { headers: authHeaders })
+      : await axios.post('/api/parts', payload, { headers: authHeaders });
+    
+    showMessage(id ? 'Part updated successfully' : 'Part created successfully', 'success');
+    resetPartForm();
+    await loadPartsPage();
+    
+    // Show QR code for the saved part
+    showPartQr(res.data.id);
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Edit part
+function editPart(id) {
+  const p = state.parts.find(x => x.id === id);
+  if (!p) return;
+  
+  document.getElementById('partId').value = p.id;
+  document.getElementById('partCode').value = p.partCode;
+  document.getElementById('partBarcode').value = p.barcode || '';
+  document.getElementById('partName').value = p.partName;
+  document.getElementById('partUnit').value = p.unit;
+  document.getElementById('partStock').value = p.stockQuantity;
+  document.getElementById('partMinStock').value = p.minimumStockLevel;
+  document.getElementById('partActive').value = String(p.active);
+  document.getElementById('partSteps').value = (p.stepTemplates || []).join('\n');
+  document.getElementById('partSubmitBtn').textContent = 'Update Part';
+  
+  showPartQr(id);
+  
+  // Scroll to form
+  document.getElementById('partFormCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Reset part form
+function resetPartForm() {
+  document.getElementById('partForm').reset();
+  document.getElementById('partId').value = '';
+  document.getElementById('partBarcode').value = '';
+  document.getElementById('partUnit').value = 'pcs';
+  document.getElementById('partActive').value = 'true';
+  document.getElementById('partSteps').value = '';
+  document.getElementById('partSubmitBtn').textContent = 'Save Part';
+  document.getElementById('partQrPanel').classList.add('d-none');
+  document.getElementById('partQrCode').innerHTML = '';
+}
+
+// Show part QR code
+function showPartQr(id) {
+  const p = state.parts.find(x => x.id === id);
+  if (!p) return;
+  
+  const panel = document.getElementById('partQrPanel');
+  const codeBox = document.getElementById('partQrCode');
+  
+  panel.classList.remove('d-none');
+  document.getElementById('partQrTitle').textContent = `QR: ${p.partCode} - ${p.partName}`;
+  document.getElementById('partQrValue').textContent = p.barcode || 'No barcode set';
+  
+  codeBox.innerHTML = '';
+  
+  if (!p.barcode) {
+    codeBox.innerHTML = '<div class="text-muted">No barcode to generate QR code</div>';
+    return;
+  }
+  
+  if (typeof QRCode === 'undefined') {
+    codeBox.textContent = 'QR library not loaded';
+    return;
+  }
+  
+  new QRCode(codeBox, {
+    text: p.barcode,
+    width: 200,
+    height: 200
+  });
+}
+
+// Adjust stock
+async function adjustStock(id, deltaQuantity) {
+  try {
+    await axios.patch('/api/parts/' + id + '/stock', { deltaQuantity }, { headers: authHeaders });
+    showMessage('Stock adjusted by ' + (deltaQuantity > 0 ? '+' : '') + deltaQuantity, 'success');
+    await loadPartsPage();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Delete part
+async function deletePart(id) {
+  if (!confirm('Are you sure you want to delete this part?')) return;
+  
+  try {
+    await axios.delete('/api/parts/' + id, { headers: authHeaders });
+    showMessage('Part deleted successfully', 'success');
+    await loadPartsPage();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Initialize page
+async function initPage() {
+  await loadPartsPage();
+}
+
+// Start when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPage);
+} else {
+  initPage();
+}
+</script>
+
+</body>
+</html>

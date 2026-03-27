@@ -1,0 +1,72 @@
+<!-- Jobs Sub-Navigation Fragment -->
+<nav th:fragment="subnav" class="jobs-subnav">
+  <ul class="nav nav-pills">
+    <li class="nav-item">
+      <a class="nav-link" href="/jobs" id="nav-jobs-list">
+        <i class="bi-list-ul"></i>
+        Job List
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="/jobs/details" id="nav-job-details">
+        <i class="bi-file-text"></i>
+        Job Details
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="/jobs/parts-management" id="nav-parts-mgmt">
+        <i class="bi-box-seam"></i>
+        Parts Management
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="/jobs/scanner" id="nav-scanner">
+        <i class="bi-qr-code-scan"></i>
+        QR Scanner
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="/jobs/notifications" id="nav-notifications">
+        <i class="bi-bell"></i>
+        Notifications
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="/jobs/data-tools" id="nav-data-tools">
+        <i class="bi-download"></i>
+        Data Tools
+      </a>
+    </li>
+  </ul>
+  
+  <script>
+  // Highlight active nav based on current path
+  (function() {
+    const path = window.location.pathname;
+    const navLinks = {
+      '/jobs': 'nav-jobs-list',
+      '/jobs/details': 'nav-job-details',
+      '/jobs/parts-management': 'nav-parts-mgmt',
+      '/jobs/scanner': 'nav-scanner',
+      '/jobs/notifications': 'nav-notifications',
+      '/jobs/data-tools': 'nav-data-tools'
+    };
+    
+    const activeId = navLinks[path];
+    if (activeId) {
+      const activeLink = document.getElementById(activeId);
+      if (activeLink) {
+        activeLink.classList.add('active');
+      }
+    }
+    
+    // Hide Data Tools if not admin
+    if (typeof isAdmin !== 'undefined' && !isAdmin) {
+      const dataToolsLink = document.querySelector('a[href="/jobs/data-tools"]');
+      if (dataToolsLink) {
+        dataToolsLink.parentElement.style.display = 'none';
+      }
+    }
+  })();
+  </script>
+</nav>

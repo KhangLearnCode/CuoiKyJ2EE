@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Jobs - FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <div th:replace="~{common-styles.fragment :: styles}"></div>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+      <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-door"></i> Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-briefcase"></i> Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="logout()">
+              <i class="bi-box-arrow-right"></i> Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
+      <div class="pt-3 pb-2 mb-3">
+        <h1 class="h3">Jobs Workspace</h1>
+        <p class="text-muted small">Manage and track field service jobs</p>
+      </div>
+
+      <div id="messageBox" class="alert d-none"></div>
+
+      <!-- Jobs Sub-Navigation -->
+      <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
+
+      <!-- Main Content Grid -->
+      <div class="row g-4">
+        <!-- Left Column: Stats & Create Job & Filters -->
+        <div class="col-lg-4">
+          <!-- Workspace Statistics -->
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Workspace Statistics</h6>
+            </div>
+            <div class="card-body">
+              <div class="row text-center small">
+                <div class="col-6 mb-2">
+                  <div class="text-muted">Total</div>
+                  <div class="h5 mb-0" id="statTotal">0</div>
+                </div>
+                <div class="col-6 mb-2">
+                  <div class="text-muted">Created</div>
+                  <div class="h5 mb-0" id="statCreated">0</div>
+                </div>
+                <div class="col-6 mb-2">
+                  <div class="text-muted">Assigned</div>
+                  <div class="h5 mb-0" id="statAssigned">0</div>
+                </div>
+                <div class="col-6 mb-2">
+                  <div class="text-muted">In Progress</div>
+                  <div class="h5 mb-0" id="statInProgress">0</div>
+                </div>
+                <div class="col-6 mb-2">
+                  <div class="text-muted">Completed</div>
+                  <div class="h5 mb-0" id="statCompleted">0</div>
+                </div>
+                <div class="col-6 mb-2">
+                  <div class="text-muted">Urgent</div>
+                  <div class="h5 mb-0 text-danger" id="statUrgent">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Create/Edit Job Form (Admin Only) -->
+          <div class="card custom-block mb-3" id="jobFormCard">
+            <div class="card-header">
+              <h6 class="mb-0">Create / Edit Job</h6>
+            </div>
+            <div class="card-body">
+              <form id="jobForm" onsubmit="submitJob(event)">
+                <input type="hidden" id="jobId"/>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Job Code *</label>
+                  <input type="text" id="jobCode" class="form-control" required/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Title *</label>
+                  <input type="text" id="jobTitle" class="form-control" required/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Customer Name *</label>
+                  <input type="text" id="customerName" class="form-control" required/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Service Address *</label>
+                  <input type="text" id="serviceAddress" class="form-control" required/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Scheduled Date</label>
+                  <input type="datetime-local" id="scheduledDate" class="form-control"/>
+                </div>
+                
+                <div class="mb-2">
+                  <label class="form-label small">Priority</label>
+                  <select id="jobPriority" class="form-select">
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM" selected>Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </div>
+                
+                <div class="mb-3">
+                  <label class="form-label small">Description</label>
+                  <textarea id="jobDescription" class="form-control" rows="3"></textarea>
+                </div>
+                
+                <div class="d-flex gap-2">
+                  <button type="submit" id="jobSubmitBtn" class="btn btn-primary">Create Job</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="resetJobForm()">Reset</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Filter Jobs -->
+          <div class="card custom-block">
+            <div class="card-header">
+              <h6 class="mb-0">Filter Jobs</h6>
+            </div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small">Search</label>
+                <input type="text" id="filterKeyword" class="form-control" 
+                  placeholder="Search by code, title, customer..."/>
+              </div>
+              
+              <div class="mb-2">
+                <label class="form-label small">Status</label>
+                <select id="filterStatus" class="form-select">
+                  <option value="">All Status</option>
+                  <option value="CREATED">CREATED</option>
+                  <option value="ASSIGNED">ASSIGNED</option>
+                  <option value="IN_PROGRESS">IN_PROGRESS</option>
+                  <option value="COMPLETED">COMPLETED</option>
+                  <option value="CANCELLED">CANCELLED</option>
+                </select>
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label small">Priority</label>
+                <select id="filterPriority" class="form-select">
+                  <option value="">All Priorities</option>
+                  <option value="URGENT">URGENT</option>
+                  <option value="HIGH">HIGH</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="LOW">LOW</option>
+                </select>
+              </div>
+              
+              <button class="btn btn-primary w-100" onclick="loadJobs()">
+                <i class="bi-search"></i> Load Jobs
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Jobs List -->
+        <div class="col-lg-8">
+          <div class="card custom-block">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h6 class="mb-0">Jobs List</h6>
+              <span class="badge bg-primary" id="jobCount">0</span>
+            </div>
+            <div class="card-body">
+              <div id="jobsBody">
+                <div class="text-muted">Loading jobs...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div th:replace="~{common-scripts.fragment :: scripts}"></div>
+
+<script>
+// Check admin permission for job form
+if (!isAdmin) {
+  document.getElementById('jobFormCard').style.display = 'none';
+}
+
+// Submit job form
+async function submitJob(e) {
+  e.preventDefault();
+  
+  if (!isAdmin) {
+    showMessage('Only administrators can create/edit jobs', 'warning');
+    return;
+  }
+  
+  const id = document.getElementById('jobId').value;
+  const payload = {
+    jobCode: document.getElementById('jobCode').value.trim(),
+    title: document.getElementById('jobTitle').value.trim(),
+    customerName: document.getElementById('customerName').value.trim(),
+    serviceAddress: document.getElementById('serviceAddress').value.trim(),
+    scheduledDate: document.getElementById('scheduledDate').value || null,
+    priority: document.getElementById('jobPriority').value,
+    description: document.getElementById('jobDescription').value.trim() || null
+  };
+  
+  try {
+    if (id) {
+      await axios.put('/api/jobs/' + id, payload, { headers: authHeaders });
+      showMessage('Job updated successfully', 'success');
+    } else {
+      await axios.post('/api/jobs', payload, { headers: authHeaders });
+      showMessage('Job created successfully', 'success');
+    }
+    
+    resetJobForm();
+    await loadJobs();
+    await loadJobStats();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Reset job form
+function resetJobForm() {
+  document.getElementById('jobForm').reset();
+  document.getElementById('jobId').value = '';
+  document.getElementById('jobPriority').value = 'MEDIUM';
+  document.getElementById('jobSubmitBtn').textContent = 'Create Job';
+}
+
+// Edit job
+function editJob(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) return;
+  
+  document.getElementById('jobId').value = job.id;
+  document.getElementById('jobCode').value = job.jobCode;
+  document.getElementById('jobTitle').value = job.title;
+  document.getElementById('customerName').value = job.customerName;
+  document.getElementById('serviceAddress').value = job.serviceAddress;
+  
+  if (job.scheduledDate) {
+    const date = new Date(job.scheduledDate);
+    const localDateTime = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    document.getElementById('scheduledDate').value = localDateTime;
+  }
+  
+  document.getElementById('jobPriority').value = job.priority;
+  document.getElementById('jobDescription').value = job.description || '';
+  document.getElementById('jobSubmitBtn').textContent = 'Update Job';
+  
+  // Scroll to form
+  document.getElementById('jobFormCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Delete job
+async function deleteJob(jobId) {
+  if (!isAdmin) {
+    showMessage('Only administrators can delete jobs', 'warning');
+    return;
+  }
+  
+  if (!confirm('Are you sure you want to delete this job?')) return;
+  
+  try {
+    await axios.delete('/api/jobs/' + jobId, { headers: authHeaders });
+    showMessage('Job deleted successfully', 'success');
+    await loadJobs();
+    await loadJobStats();
+  } catch(e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+// Render jobs list
+function renderJobs() {
+  const box = document.getElementById('jobsBody');
+  const count = document.getElementById('jobCount');
+  
+  count.textContent = state.jobs.length;
+  
+  if (!state.jobs.length) {
+    box.innerHTML = '<div class="text-muted text-center py-4">No jobs found</div>';
+    return;
+  }
+  
+  box.innerHTML = state.jobs.map(j => {
+    const statusBadge = {
+      'CREATED': 'bg-secondary',
+      'ASSIGNED': 'bg-info',
+      'IN_PROGRESS': 'bg-warning',
+      'COMPLETED': 'bg-success',
+      'CANCELLED': 'bg-dark'
+    }[j.status] || 'bg-secondary';
+    
+    const priorityBadge = {
+      'URGENT': 'bg-danger',
+      'HIGH': 'bg-warning',
+      'MEDIUM': 'bg-info',
+      'LOW': 'bg-secondary'
+    }[j.priority] || 'bg-secondary';
+    
+    const checklistProgress = j.checklist && j.checklist.length
+      ? `<div class="small text-muted">
+          <i class="bi-check2-square"></i> 
+          ${j.checklist.filter(i => i.completed).length}/${j.checklist.length} done
+        </div>`
+      : '';
+    
+    const imageCount = j.images && j.images.length
+      ? `<div class="small text-muted">
+          <i class="bi-image"></i> ${j.images.length} images
+        </div>`
+      : '';
+    
+    return `
+      <div class="border rounded p-3 mb-2">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <h6 class="mb-1">${escapeHtml(j.jobCode)}</h6>
+            <div class="fw-semibold">${escapeHtml(j.title)}</div>
+          </div>
+          <div class="d-flex gap-1">
+            <span class="badge ${statusBadge}">${j.status}</span>
+            <span class="badge ${priorityBadge}">${j.priority}</span>
+          </div>
+        </div>
+        
+        <div class="small mb-2">
+          <div><strong>Customer:</strong> ${escapeHtml(j.customerName)}</div>
+          <div><strong>Address:</strong> ${escapeHtml(j.serviceAddress)}</div>
+          <div><strong>Technician:</strong> ${escapeHtml(j.assignedUsername || 'Unassigned')}</div>
+          ${j.scheduledDate ? `<div><strong>Scheduled:</strong> ${formatDateTime(j.scheduledDate)}</div>` : ''}
+        </div>
+        
+        <div class="d-flex gap-2 mb-2">
+          ${checklistProgress}
+          ${imageCount}
+        </div>
+        
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="/jobs/details?id=${j.id}" class="btn btn-sm btn-outline-primary">
+            <i class="bi-eye"></i> View Details
+          </a>
+          ${isAdmin ? `
+            <button class="btn btn-sm btn-outline-secondary" onclick="editJob(${j.id})">
+              <i class="bi-pencil"></i> Edit
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteJob(${j.id})">
+              <i class="bi-trash"></i> Delete
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Initialize page
+async function initPage() {
+  await loadTechnicians();
+  await loadJobs();
+  await loadJobStats();
+  await loadNotifications();
+  
+  connectWebSocket();
+  startNotificationPolling();
+}
+
+// Start when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPage);
+} else {
+  initPage();
+}
+</script>
+
+</body>
+</html>

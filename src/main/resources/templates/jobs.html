@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FSM Jobs</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --background: #0f172a;
+      --surface: #1e293b;
+      --text: #e2e8f0;
+      --text-secondary: #94a3b8;
+    }
+    body {
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .floating-shapes { position: fixed; inset: 0; z-index: -1; }
+    .shape { position: absolute; border-radius: 50%; filter: blur(40px); background: rgba(99, 102, 241, 0.12); animation: float 20s infinite ease-in-out; }
+    .shape:nth-child(1) { width: 260px; height: 260px; top: 10%; left: 8%; }
+    .shape:nth-child(2) { width: 180px; height: 180px; top: 58%; right: 10%; animation-delay: 4s; }
+    .shape:nth-child(3) { width: 220px; height: 220px; bottom: 8%; left: 32%; animation-delay: 9s; }
+    @keyframes float { 0%,100%{transform:translate(0,0)} 50%{transform:translate(25px,-20px)} }
+
+    .fsm-icon-btn { border: 0; background: transparent; color: #fff; font-size: 1.2rem; margin-right: 12px; }
+    body.sidebar-collapsed #sidebarMenu {
+      display: none !important;
+    }
+    body.sidebar-collapsed .main-wrapper {
+      margin-left: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      flex: 0 0 100%;
+    }
+    .navbar {
+      background: rgba(15, 23, 42, .85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(99,102,241,.2);
+    }
+    .navbar-brand, .nav-link, .title-group h1 { color: var(--text) !important; }
+    .title-group small, .text-muted { color: var(--text-secondary) !important; }
+    .card-header, .card-body, .small, span, p, li, label, h6, h5, h4, h3, h2, h1, div { color: var(--text); }
+    .text-secondary { color: var(--text-secondary) !important; }
+    .alert { color: #fff !important; }
+    .btn-outline-secondary, .btn-outline-dark { color: #fff !important; border-color: rgba(255,255,255,.35) !important; }
+    .btn-outline-secondary:hover, .btn-outline-dark:hover { background: rgba(255,255,255,.12) !important; }
+    .sidebar { background: rgba(15, 23, 42, .75); border-right: 1px solid rgba(99,102,241,.2); }
+    .sidebar .nav-link.active { background: rgba(99,102,241,.2); border-radius: 10px; }
+    .form-control,
+    .form-select {
+      border-radius: 10px !important;
+      border: 1px solid rgba(99,102,241,.2) !important;
+      min-height: 46px;
+      background: rgba(15, 23, 42, 0.55) !important;
+      color: var(--text) !important;
+    }
+    .form-control::placeholder { color: #cbd5e1 !important; opacity: .85; }
+    option { color: #fff; background: #1f2937; }
+    .form-control:focus,
+    .form-select:focus {
+      border-color: #80bdff !important;
+      box-shadow: 0 0 0 0.2rem rgba(0,123,255,.15) !important;
+    }
+    .btn { border-radius: 10px !important; }
+    .signature-canvas { width: 100%; height: 180px; border: 1px dashed #8b99ad; border-radius: 18px; touch-action: none; background: #fff; }
+    .job-image { width: 100%; height: 150px; object-fit: cover; background: #f8f9fa; border-radius: 14px; }
+    .notification-item { border: 1px solid rgba(99,102,241,.2); border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(15,23,42,.45); color: #f8fafc !important; }
+    .notification-item .fw-semibold { color: #ffffff !important; }
+    .notification-item .small { color: #e2e8f0 !important; }
+    .notification-item .text-muted { color: #cbd5e1 !important; }
+    .notification-item.unread { border-color: rgba(99,102,241,.55); background: rgba(30, 41, 59, 0.9); }
+    #scannerReader { width: 100%; min-height: 240px; border: 1px dashed #8b99ad; border-radius: 18px; overflow: hidden; background: rgba(255,255,255,0.92); }
+    .lookup-result { border: 1px solid rgba(99,102,241,.2); border-radius: 12px; padding: 14px; background: rgba(15,23,42,.45); }
+    #jobsBody > div,
+    #partsList > div {
+      border: 1px solid rgba(99,102,241,.2) !important;
+      border-radius: 12px !important;
+      background: rgba(15,23,42,.45);
+    }
+    #selectedJobBox ul {
+      padding-left: 1.1rem;
+    }
+    #partQrPanel {
+      border-radius: 12px !important;
+      border: 1px solid rgba(99,102,241,.2) !important;
+    }
+    .custom-block {
+      background: rgba(30, 41, 59, 0.75) !important;
+      border: 1px solid rgba(99,102,241,.2);
+      border-radius: 14px;
+    }
+    .border, hr { border-color: rgba(148,163,184,.28) !important; }
+    .badge.text-bg-light { background: rgba(99,102,241,.2) !important; color: #dbeafe !important; }
+  </style>
+</head>
+<body>
+<div class="floating-shapes"><div class="shape"></div><div class="shape"></div><div class="shape"></div></div>
+<header class="navbar sticky-top flex-md-nowrap">
+  <div class="col-md-3 col-lg-3 me-0 px-3 fs-6">
+    <button class="fsm-icon-btn" type="button" onclick="toggleSidebar()" title="Thu gọn / mở rộng menu">
+      <i class="bi-list"></i>
+    </button>
+    <a class="navbar-brand" href="/">
+      <i class="bi-wrench-adjustable-circle"></i>
+      FSM Jobs
+    </a>
+  </div>
+  <div class="navbar-nav me-lg-2 ms-auto">
+    <div class="nav-item text-nowrap d-flex align-items-center">
+      <span id="userLabel" class="text-white small me-3"></span>
+      <button class="btn btn-sm btn-light me-2" onclick="toggleNotifications()" type="button">
+        Notifications <span id="notificationBadge" class="badge text-bg-danger d-none">0</span>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container-fluid">
+  <div class="row">
+    <nav id="sidebarMenu" class="col-md-3 col-lg-3 d-md-block sidebar collapse">
+      <div class="position-sticky py-4 px-3 sidebar-sticky">
+        <ul class="nav flex-column h-100">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="bi-house-fill me-2"></i>
+              Overview
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/jobs">
+              <i class="bi-kanban-fill me-2"></i>
+              Jobs Workspace
+            </a>
+          </li>
+          <li class="nav-item border-top mt-auto pt-2">
+            <a class="nav-link" href="javascript:void(0)" onclick="logout()">
+              <i class="bi-box-arrow-left me-2"></i>
+              Logout
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <main class="main-wrapper col-md-9 ms-sm-auto py-4 col-lg-9 px-md-4 border-start">
+      <div class="title-group mb-3">
+        <h1 class="h2 mb-0">FSM Jobs Workspace</h1>
+        <small class="text-muted">Dispatch, execution, parts lookup, notifications, signatures.</small>
+      </div>
+
+  <div id="messageBox" class="alert d-none"></div>
+  <div id="notificationPanel" class="custom-block bg-white mb-3 d-none">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Thong bao</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="markAllNotificationsRead()" type="button">Danh dau da doc</button>
+    </div>
+    <div class="card-body" id="notificationList"><div class="text-muted">Chua co thong bao</div></div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="custom-block bg-white mb-3">
+        <div class="card-header">Workspace Stats</div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between small mb-2"><span>Total jobs</span><span id="statTotal">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Created</span><span id="statCreated">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Assigned</span><span id="statAssigned">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>In progress</span><span id="statInProgress">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Completed</span><span id="statCompleted">0</span></div>
+          <hr/>
+          <div class="d-flex justify-content-between small mb-2"><span>Urgent</span><span id="statUrgent">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>High</span><span id="statHigh">0</span></div>
+          <div class="d-flex justify-content-between small mb-2"><span>Medium</span><span id="statMedium">0</span></div>
+          <div class="d-flex justify-content-between small"><span>Low</span><span id="statLow">0</span></div>
+        </div>
+      </div>
+
+      <div class="custom-block bg-white mb-3" id="jobFormCard">
+        <div class="card-header">Job Form (Admin)</div>
+        <div class="card-body">
+          <form id="jobForm">
+            <input type="hidden" id="jobId"/>
+            <input class="form-control mb-2" id="title" placeholder="Title" required/>
+            <input class="form-control mb-2" id="customerName" placeholder="Customer" required/>
+            <input class="form-control mb-2" id="serviceAddress" placeholder="Address" required/>
+            <input class="form-control mb-2" id="scheduledDate" type="date" required/>
+            <select class="form-select mb-2" id="priority">
+              <option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>URGENT</option>
+            </select>
+            <textarea class="form-control mb-2" id="description" placeholder="Description"></textarea>
+            <button class="btn btn-primary btn-sm" type="submit" id="jobSubmitBtn">Save Job</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="resetJobForm()">Reset</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="custom-block bg-white mb-3">
+        <div class="card-header">Filters</div>
+        <div class="card-body">
+          <input class="form-control mb-2" id="filterKeyword" placeholder="Keyword"/>
+          <select class="form-select mb-2" id="filterStatus"><option value="">ALL</option><option>CREATED</option><option>ASSIGNED</option><option>IN_PROGRESS</option><option>COMPLETED</option><option>CANCELLED</option></select>
+          <select class="form-select mb-2" id="filterPriority"><option value="">ALL</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>URGENT</option></select>
+          <button class="btn btn-dark btn-sm" onclick="loadJobs()" type="button">Load Jobs</button>
+        </div>
+      </div>
+
+      <div class="custom-block bg-white mb-3" id="dataToolsCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Data Tools</span>
+          <div class="badge text-bg-light">Admin</div>
+        </div>
+        <div class="card-body">
+          <div class="d-flex gap-2 mb-2">
+            <button class="btn btn-sm btn-outline-dark" type="button" onclick="exportJobs('csv')">Export CSV</button>
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="exportJobs('xlsx')">Export Excel</button>
+          </div>
+          <div class="small text-muted mb-3">Sử dụng bộ lọc hiện tại cho file xuất.</div>
+          <div class="border rounded p-2">
+            <label class="form-label small fw-semibold">Import jobs (CSV)</label>
+            <input type="file" accept=".csv" class="form-control form-control-sm mb-2" id="importFile"/>
+            <button class="btn btn-sm btn-success" type="button" onclick="importJobs()">Upload & Import</button>
+            <div class="small text-muted mt-2">Cột: title,customerName,serviceAddress,scheduledDate(yyyy-MM-dd),priority[,description]</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="custom-block bg-white mb-3">
+        <div class="card-header">Parts Lookup</div>
+        <div class="card-body">
+          <div id="scannerReader" class="mb-2"></div>
+          <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-sm btn-primary" type="button" onclick="startScanner()">Bat camera</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="stopScanner()">Dung camera</button>
+          </div>
+          <div class="input-group input-group-sm mb-2">
+            <input class="form-control" id="lookupKeyword" placeholder="Nhap part code / barcode / ten vat tu"/>
+            <button class="btn btn-outline-dark" type="button" onclick="lookupPart()">Lookup</button>
+            <button class="btn btn-outline-secondary" type="button" onclick="searchParts()">Search</button>
+          </div>
+          <div id="lookupResults" class="small"></div>
+        </div>
+      </div>
+
+      <div class="custom-block bg-white" id="inventoryCard">
+        <div class="card-header">Inventory (Admin)</div>
+        <div class="card-body">
+          <form id="partForm" class="mb-2">
+            <input type="hidden" id="partId"/>
+            <input class="form-control mb-2" id="partCode" placeholder="Part Code" required/>
+            <input class="form-control mb-2" id="partBarcode" placeholder="Barcode / QR code value"/>
+            <input class="form-control mb-2" id="partName" placeholder="Part Name" required/>
+            <div class="row g-2 mb-2">
+              <div class="col"><input class="form-control" id="partUnit" value="pcs" required/></div>
+              <div class="col"><input class="form-control" id="partStock" type="number" min="0" placeholder="Stock" required/></div>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col"><input class="form-control" id="partMinStock" type="number" min="0" placeholder="Min" required/></div>
+              <div class="col"><select class="form-select" id="partActive"><option value="true" selected>Active</option><option value="false">Inactive</option></select></div>
+            </div>
+            <textarea class="form-control mb-2" id="partSteps" rows="4" placeholder="Step templates, moi dong la mot buoc"></textarea>
+            <button class="btn btn-primary btn-sm" type="submit" id="partSubmitBtn">Save Part</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="resetPartForm()">Reset</button>
+          </form>
+          <div id="partQrPanel" class="border rounded p-2 mb-2 bg-white d-none">
+            <div class="small fw-semibold mb-1" id="partQrTitle">QR Preview</div>
+            <div class="small text-muted mb-2" id="partQrValue"></div>
+            <div id="partQrCode" class="d-flex justify-content-center"></div>
+          </div>
+          <div id="partsList" class="small"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="custom-block bg-white">
+        <div class="card-header d-flex justify-content-between"><span>Jobs</span><span id="jobCount" class="badge text-bg-dark">0</span></div>
+        <div class="card-body" id="jobsBody"></div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="custom-block bg-white">
+        <div class="card-header">Selected Job</div>
+        <div class="card-body" id="selectedJobBox"><div class="text-muted">Select job</div></div>
+      </div>
+    </div>
+  </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const user = JSON.parse(localStorage.getItem('user')); if (!user || !user.token) window.location.href='/login';
+const isAdmin = user.roles.includes('ROLE_ADMIN');
+const authHeaders = { Authorization:'Bearer '+user.token };
+const state = { jobs:[], selected:null, parts:[], technicians:[], previewUrls:[], notifications:[], notificationPanelOpen:false, notificationPoller:null, lookupResult:null, lookupSearchResults:[], scannerInstance:null, scannerRunning:false };
+const signatureState = { drawing:false, hasStroke:false };
+document.getElementById('userLabel').textContent = user.username + ' - ' + user.roles.join(',');
+if(!isAdmin){ document.getElementById('jobFormCard').classList.add('d-none'); document.getElementById('inventoryCard').classList.add('d-none'); document.getElementById('dataToolsCard').classList.add('d-none'); }
+document.getElementById('jobForm').addEventListener('submit', submitJob);
+document.getElementById('partForm').addEventListener('submit', submitPart);
+
+function showMessage(m,t){ const b=document.getElementById('messageBox'); b.textContent=m; b.className='alert alert-'+t; }
+function resolveError(e){ return e.response?.data?.message || e.message || 'Error'; }
+function logout(){ cleanupPreviewUrls(); localStorage.removeItem('user'); window.location.href='/login'; }
+function formatDateTime(v){ return v ? new Date(v).toLocaleString() : ''; }
+function cleanupPreviewUrls(){ state.previewUrls.forEach(url=>URL.revokeObjectURL(url)); state.previewUrls=[]; }
+
+async function init(){ await loadTechnicians(); await loadParts(); await loadJobs(); await loadNotifications(); await loadJobStats(); connectWebSocket(); startNotificationPolling(); }
+
+let stompClient = null;
+function connectWebSocket(){
+  if(!user || !user.token) return;
+  if(typeof SockJS === 'undefined' || typeof Stomp === 'undefined') return;
+  try{
+    const socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    // disable debug
+    stompClient.debug = null;
+    stompClient.connect({}, function(frame){
+      const dest = '/topic/notifications/' + user.username;
+      stompClient.subscribe(dest, function(message){
+        try{
+          const payload = JSON.parse(message.body);
+          // prepend
+          state.notifications.unshift(payload);
+          renderNotifications();
+          // update badge
+          const unread = state.notifications.filter(n=>!n.read).length;
+          renderNotificationBadge(unread);
+        }catch(e){ console.warn('Invalid ws payload', e); }
+      });
+    }, function(err){
+      console.warn('WS connect error', err);
+    });
+  }catch(e){ console.warn('WS init failed', e); }
+}
+
+function disconnectWebSocket(){
+  try{ if(stompClient) { stompClient.disconnect(); stompClient=null; } }catch(e){}
+}
+
+window.addEventListener('beforeunload', ()=>{ disconnectWebSocket(); });
+
+function buildJobQueryParams(){
+  const params={};
+  const k=document.getElementById('filterKeyword').value.trim(); if(k) params.keyword=k;
+  const s=document.getElementById('filterStatus').value; if(s) params.status=s;
+  const p=document.getElementById('filterPriority').value; if(p) params.priority=p;
+  if(!isAdmin && user.id){ params.assignedUserId = user.id; }
+  return params;
+}
+
+async function loadJobs(){
+  try{
+    const params=buildJobQueryParams();
+    const res=await axios.get('/api/jobs',{headers:authHeaders,params});
+    state.jobs=res.data.content||[]; document.getElementById('jobCount').textContent=state.jobs.length;
+    renderJobs();
+    if(state.selected){
+      const refreshed=state.jobs.find(x=>x.id===state.selected.id);
+      if(refreshed){ await selectJob(refreshed.id); return; }
+    }
+    if(state.jobs.length && !state.selected) await selectJob(state.jobs[0].id);
+    if(!state.jobs.length){ state.selected=null; renderSelected(); }
+    await loadJobStats();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function exportJobs(format){
+  if(!isAdmin){ showMessage('Only admin can export','warning'); return; }
+  try{
+    const params=buildJobQueryParams();
+    params.format=format || 'csv';
+    const res=await axios.get('/api/jobs/export',{headers:authHeaders,params,responseType:'blob'});
+    const disposition=res.headers['content-disposition'] || '';
+    const match=/filename=\"?([^\";]+)\"?/i.exec(disposition);
+    const filename=match?match[1]:'jobs-export.'+(format==='xlsx'?'xlsx':'csv');
+    const url=URL.createObjectURL(res.data);
+    const link=document.createElement('a');
+    link.href=url; link.download=filename;
+    document.body.appendChild(link); link.click(); link.remove();
+    URL.revokeObjectURL(url);
+    showMessage('Exported jobs ('+format.toUpperCase()+')','success');
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function importJobs(){
+  if(!isAdmin){ showMessage('Only admin can import','warning'); return; }
+  const fileInput=document.getElementById('importFile');
+  if(!fileInput.files.length){ showMessage('Choose a CSV file first','warning'); return; }
+  const formData=new FormData();
+  formData.append('file', fileInput.files[0]);
+  try{
+    const res=await axios.post('/api/jobs/import',formData,{headers:{...authHeaders,'Content-Type':'multipart/form-data'}});
+    const summary=res.data;
+    const msg=`Imported ${summary.imported}/${summary.totalRows} rows${summary.failed?`, failed ${summary.failed}`:''}`;
+    showMessage(msg,'success');
+    if(summary.errors && summary.errors.length){
+      console.warn('Import errors', summary.errors);
+    }
+    await loadJobs();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function loadJobStats(){
+  try{
+    const params = isAdmin ? {} : { assignedUserId: user.id };
+    const res=await axios.get('/api/jobs/stats',{headers:authHeaders, params});
+    renderJobStats(res.data);
+  }catch(e){
+    // keep silent on unauthorized
+  }
+}
+
+function renderJobStats(stats){
+  if(!stats) return;
+  const byStatus=stats.byStatus || {};
+  const byPriority=stats.byPriority || {};
+  document.getElementById('statTotal').textContent=stats.total ?? 0;
+  document.getElementById('statCreated').textContent=byStatus.CREATED ?? 0;
+  document.getElementById('statAssigned').textContent=byStatus.ASSIGNED ?? 0;
+  document.getElementById('statInProgress').textContent=byStatus.IN_PROGRESS ?? 0;
+  document.getElementById('statCompleted').textContent=byStatus.COMPLETED ?? 0;
+  document.getElementById('statUrgent').textContent=byPriority.URGENT ?? 0;
+  document.getElementById('statHigh').textContent=byPriority.HIGH ?? 0;
+  document.getElementById('statMedium').textContent=byPriority.MEDIUM ?? 0;
+  document.getElementById('statLow').textContent=byPriority.LOW ?? 0;
+}
+
+function toggleSidebar(){
+  document.body.classList.toggle('sidebar-collapsed');
+}
+
+function renderJobs(){
+  const box=document.getElementById('jobsBody');
+  if(!state.jobs.length){ box.innerHTML='<div class="text-muted">No jobs</div>'; return; }
+  box.innerHTML=state.jobs.map(j=>{
+    const chk=(j.checklist||[]).filter(x=>x.completed).length+'/'+(j.checklist||[]).length;
+    const imageCount=(j.images||[]).length;
+    return `<div class="border rounded p-2 mb-2">
+      <div><strong>${j.jobCode}</strong> - ${j.title}</div>
+      <div class="small text-muted">${j.customerName} | ${j.status} | checklist ${chk} | images ${imageCount}</div>
+      <div class="mt-2">
+        <button class="btn btn-sm btn-outline-dark" onclick="selectJob(${j.id})">Open</button>
+        ${isAdmin?`<button class="btn btn-sm btn-outline-primary" onclick="editJob(${j.id})">Edit</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteJob(${j.id})">Delete</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleNotifications(){
+  state.notificationPanelOpen=!state.notificationPanelOpen;
+  document.getElementById('notificationPanel').classList.toggle('d-none',!state.notificationPanelOpen);
+}
+
+async function loadNotifications(){
+  try{
+    const [listRes,countRes]=await Promise.all([
+      axios.get('/api/notifications',{headers:authHeaders}),
+      axios.get('/api/notifications/unread-count',{headers:authHeaders})
+    ]);
+    state.notifications=listRes.data||[];
+    renderNotifications();
+    renderNotificationBadge(countRes.data?.count||0);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function renderNotifications(){
+  const box=document.getElementById('notificationList');
+  if(!state.notifications.length){ box.innerHTML='<div class="text-muted">Chua co thong bao</div>'; return; }
+  box.innerHTML=state.notifications.map(n=>`<div class="notification-item ${n.read?'':'unread'}">
+    <div class="d-flex justify-content-between gap-2">
+      <div>
+        <div class="fw-semibold">${escapeHtml(n.title)}</div>
+        <div class="small">${escapeHtml(n.message)}</div>
+        <div class="small text-muted">${formatDateTime(n.createdAt)}</div>
+      </div>
+      <div class="d-flex flex-column gap-1 align-items-end">
+        ${n.type==='LOW_STOCK'
+          ? `<button class="btn btn-sm btn-outline-primary" onclick="openLowStockPart(${n.partId},${n.id})" type="button">Mo vat tu</button>`
+          : n.type==='JOB_DUE_SOON'
+            ? `<button class="btn btn-sm btn-outline-warning" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job sap den han</button>`
+            : `<button class="btn btn-sm btn-outline-primary" onclick="openNotificationJob(${n.jobId},${n.id})" type="button">Mo job</button>`}
+        ${n.read?'':`<button class="btn btn-sm btn-outline-secondary" onclick="markNotificationRead(${n.id})" type="button">Da doc</button>`}
+        <button class="btn btn-sm btn-outline-danger" onclick="clearNotification(${n.id})" type="button">Clear</button>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+function renderNotificationBadge(count){
+  const badge=document.getElementById('notificationBadge');
+  badge.textContent=count;
+  badge.classList.toggle('d-none',!count);
+}
+
+async function markNotificationRead(id){
+  try{
+    await axios.patch('/api/notifications/'+id+'/read',{}, {headers:authHeaders});
+    await loadNotifications();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function markAllNotificationsRead(){
+  try{
+    await axios.patch('/api/notifications/read-all',{}, {headers:authHeaders});
+    await loadNotifications();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function clearNotification(id){
+  try{
+    await axios.delete('/api/notifications/'+id,{headers:authHeaders});
+    await loadNotifications();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function openNotificationJob(jobId,notificationId){
+  try{
+    if(notificationId) await axios.patch('/api/notifications/'+notificationId+'/read',{}, {headers:authHeaders});
+    await loadNotifications();
+    await selectJob(jobId);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function openLowStockPart(partId, notificationId){
+  if(!partId){ showMessage('Part not found in notification','warning'); return; }
+  try{
+    if(notificationId) await axios.patch('/api/notifications/'+notificationId+'/read',{}, {headers:authHeaders});
+    await loadNotifications();
+    await loadParts();
+    if(isAdmin){
+      const part = state.parts.find(p=>p.id===partId);
+      if(part){
+        editPart(partId);
+        document.getElementById('inventoryCard')?.scrollIntoView({behavior:'smooth'});
+      }
+    }
+    showMessage('Low stock part opened','success');
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function startNotificationPolling(){
+  if(state.notificationPoller) clearInterval(state.notificationPoller);
+  state.notificationPoller=setInterval(loadNotifications,15000);
+}
+
+async function startScanner(){
+  if(state.scannerRunning) return;
+  if(typeof Html5Qrcode === 'undefined'){ showMessage('Scanner library is not loaded','danger'); return; }
+  try{
+    state.scannerInstance = state.scannerInstance || new Html5Qrcode('scannerReader');
+    await state.scannerInstance.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      onScanSuccess,
+      () => {}
+    );
+    state.scannerRunning=true;
+  }catch(e){ showMessage('Cannot start camera: ' + resolveError(e),'danger'); }
+}
+
+async function stopScanner(){
+  if(!state.scannerInstance || !state.scannerRunning) return;
+  try{
+    await state.scannerInstance.stop();
+  }catch(e){}
+  state.scannerRunning=false;
+}
+
+async function onScanSuccess(decodedText){
+  document.getElementById('lookupKeyword').value = decodedText;
+  await stopScanner();
+  await lookupPart();
+}
+
+async function lookupPart(){
+  const code=document.getElementById('lookupKeyword').value.trim();
+  if(!code){ showMessage('Nhap ma QR/barcode/part code truoc','warning'); return; }
+  try{
+    const res=await axios.get('/api/parts/lookup',{headers:authHeaders,params:{code}});
+    state.lookupResult=res.data;
+    state.lookupSearchResults=[];
+    renderLookupResults();
+  }catch(e){
+    state.lookupResult=null;
+    renderLookupResults();
+    showMessage(resolveError(e),'danger');
+  }
+}
+
+async function searchParts(){
+  const keyword=document.getElementById('lookupKeyword').value.trim();
+  if(!keyword){ showMessage('Nhap tu khoa truoc','warning'); return; }
+  try{
+    const res=await axios.get('/api/parts/search',{headers:authHeaders,params:{keyword}});
+    state.lookupSearchResults=res.data||[];
+    state.lookupResult=null;
+    renderLookupResults();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function renderLookupResults(){
+  const box=document.getElementById('lookupResults');
+  if(state.lookupResult){
+    const p=state.lookupResult;
+    const steps=(p.stepTemplates||[]).map((step,index)=>`<li>${index+1}. ${escapeHtml(step)}</li>`).join('') || '<li>Chua co step templates</li>';
+    box.innerHTML=`<div class="lookup-result">
+      <div class="fw-semibold">${escapeHtml(p.partCode)}${p.barcode?` <span class="text-muted">(${escapeHtml(p.barcode)})</span>`:''}</div>
+      <div>${escapeHtml(p.partName)}</div>
+      <div class="small text-muted">Ton kho: ${p.stockQuantity} ${escapeHtml(p.unit)} | Min: ${p.minimumStockLevel} | ${p.active?'Active':'Inactive'}</div>
+      <div class="mt-2 small fw-semibold">Step templates</div>
+      <ol class="small mb-2 ps-3">${steps}</ol>
+      <button class="btn btn-sm btn-outline-primary" type="button" onclick="useLookupPart(${p.id})">Dung cho job dang chon</button>
+    </div>`;
+    return;
+  }
+  if(state.lookupSearchResults.length){
+    box.innerHTML=state.lookupSearchResults.map(p=>`<div class="lookup-result mb-2">
+      <div class="fw-semibold">${escapeHtml(p.partCode)}${p.barcode?` <span class="text-muted">(${escapeHtml(p.barcode)})</span>`:''}</div>
+      <div>${escapeHtml(p.partName)}</div>
+      <div class="small text-muted">Ton kho: ${p.stockQuantity} ${escapeHtml(p.unit)}</div>
+      <button class="btn btn-sm btn-outline-primary mt-2" type="button" onclick="selectLookupResult(${p.id})">Xem chi tiet</button>
+    </div>`).join('');
+    return;
+  }
+  box.innerHTML='<div class="text-muted">Chua co ket qua tra cuu</div>';
+}
+
+function selectLookupResult(partId){
+  const fromLoaded=state.parts.find(p=>p.id===partId);
+  if(fromLoaded){
+    state.lookupResult=fromLoaded;
+    state.lookupSearchResults=[];
+    renderLookupResults();
+  }
+}
+
+function useLookupPart(partId){
+  if(!state.selected){ showMessage('Hay mo mot job truoc','warning'); return; }
+  const select=document.getElementById('usePartId');
+  if(!select){ showMessage('Khong tim thay form su dung vat tu','danger'); return; }
+  select.value=String(partId);
+  showMessage('Da chon vat tu cho job hien tai','success');
+}
+
+async function selectJob(id){
+  try{
+    const r=await axios.get('/api/jobs/'+id,{headers:authHeaders});
+    state.selected=r.data;
+    renderSelected();
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+function renderSelected(){
+  cleanupPreviewUrls();
+  const b=document.getElementById('selectedJobBox'); const j=state.selected;
+  if(!j){ b.innerHTML='<div class="text-muted">Select job</div>'; return; }
+  const partOptions = state.parts.filter(x=>x.active).map(x=>`<option value="${x.id}">${x.partCode} (${x.stockQuantity})</option>`).join('');
+  const checklist=(j.checklist||[]).map(i=>`<div class="border rounded p-2 mb-2"><div><strong>${i.itemName}</strong> - ${i.completed?'DONE':'TODO'}</div>
+      <div class="small text-muted">${i.note||''}</div><button class="btn btn-sm ${i.completed?'btn-outline-warning':'btn-outline-success'}" onclick="toggleChecklist(${j.id},${i.id},${!i.completed})">${i.completed?'Undo':'Done'}</button></div>`).join('') || '<div class="text-muted">No checklist</div>';
+  const parts=(j.usedParts||[]).map(u=>`<li>${u.partCode} - ${u.quantityUsed} ${u.unit} (${u.usedBy||'system'})</li>`).join('') || '<li>No part usage</li>';
+  const timeline=(j.timeline||[]).map(t=>`<li>${t.activityType}: ${t.message}</li>`).join('') || '<li>No timeline</li>';
+  const images=(j.images||[]).map(img=>`<div class="col-6">
+      <div class="border rounded p-2 h-100">
+        <img class="job-image mb-2" alt="${escapeHtml(img.fileName)}" data-protected-src="${img.imageUrl}"/>
+        <div class="small fw-semibold text-break">${escapeHtml(img.fileName)}</div>
+        <div class="small text-muted">${escapeHtml(img.uploadedBy||'system')} ${img.uploadedAt?'- '+formatDateTime(img.uploadedAt):''}</div>
+      </div>
+    </div>`).join('') || '<div class="text-muted">No uploaded images</div>';
+  const signaturePreview=j.signatureImageUrl
+    ? `<img class="img-fluid border rounded p-2 bg-white" alt="signature" data-protected-src="${j.signatureImageUrl}"/>
+       <div class="small text-muted mt-1">Signed by ${escapeHtml(j.signatureSignedBy||'')} ${j.signatureSignedAt?'at '+formatDateTime(j.signatureSignedAt):''}</div>`
+    : '<div class="text-muted">No signature</div>';
+
+  b.innerHTML=`<div><strong>${j.jobCode}</strong> ${j.title}</div>
+    <div class="small text-muted mb-2">${j.status} | ${j.assignedUsername||'Unassigned'}</div>
+    <div class="small mb-3">${escapeHtml(j.customerName)}<br/>${escapeHtml(j.serviceAddress)}<br/>${escapeHtml(j.description||'')}</div>
+
+    ${isAdmin && (j.status!=='COMPLETED' && j.status!=='CANCELLED') ? `
+    <h6>Assign Technician</h6>
+    <form onsubmit="assignJob(event,${j.id})" class="mb-3">
+      <select id="assignTechId" class="form-select form-select-sm mb-1" required>
+        <option value="">Select technician</option>
+        ${state.technicians.map(t=>`<option value="${t.id}" ${j.assignedUserId===t.id?'selected':''}>${t.username}</option>`).join('')}
+      </select>
+      <input id="assignNote" class="form-control form-control-sm mb-1" placeholder="Assignment note"/>
+      <button class="btn btn-sm btn-warning">Assign Job</button>
+    </form>
+    ` : ''}
+
+    ${!isAdmin && (j.status!=='COMPLETED' && j.status!=='CANCELLED') && j.assignedUserId===user.id ? `
+    <h6>Update Job Status</h6>
+    <div class="mb-3">
+      <div class="small text-muted mb-2">Current: <strong>${j.status}</strong></div>
+      <div class="d-flex gap-2 flex-wrap">
+        ${j.status==='ASSIGNED' ? `
+          <button class="btn btn-sm btn-primary" onclick="updateJobStatus(${j.id},'IN_PROGRESS')">Start Work</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+        ` : ''}
+        ${j.status==='IN_PROGRESS' ? `
+          <button class="btn btn-sm btn-success" onclick="updateJobStatus(${j.id},'COMPLETED')">Complete Job</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+        ` : ''}
+        ${j.status==='CREATED' ? `
+          <button class="btn btn-sm btn-outline-secondary" onclick="updateJobStatus(${j.id},'CANCELLED')">Cancel</button>
+        ` : ''}
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="d-flex gap-2 flex-wrap mb-3">
+      <button class="btn btn-sm btn-outline-danger" type="button" onclick="downloadReport(${j.id})">Export PDF</button>
+    </div>
+
+    <h6>Checklist</h6>
+    ${isAdmin?`<form onsubmit="addChecklist(event,${j.id})" class="mb-2"><input id="checkName" class="form-control form-control-sm mb-1" placeholder="New item" required/><input id="checkNote" class="form-control form-control-sm mb-1" placeholder="Note"/><button class="btn btn-sm btn-primary">Add</button></form>`:''}
+    ${checklist}
+
+    <h6 class="mt-3">Use Part</h6>
+    <form onsubmit="usePart(event,${j.id})" class="mb-2">
+      <select id="usePartId" class="form-select form-select-sm mb-1" required><option value="">Select part</option>${partOptions}</select>
+      <input id="useQty" type="number" min="1" class="form-control form-control-sm mb-1" placeholder="Qty" required/>
+      <input id="useNote" class="form-control form-control-sm mb-1" placeholder="Note"/>
+      <button class="btn btn-sm btn-dark">Record</button>
+    </form>
+    <ul>${parts}</ul>
+
+    <h6 class="mt-3">Upload Images</h6>
+    <form onsubmit="uploadImages(event,${j.id})" class="mb-2">
+      <input id="jobImagesInput" type="file" class="form-control form-control-sm mb-2" accept="image/*" multiple required/>
+      <button class="btn btn-sm btn-primary">Upload Images</button>
+    </form>
+    <div class="row g-2">${images}</div>
+
+    <h6 class="mt-3">Electronic Signature</h6>
+    <canvas id="signatureCanvas" class="signature-canvas mb-2"></canvas>
+    <div class="d-flex gap-2 mb-2">
+      <button class="btn btn-sm btn-outline-secondary" type="button" onclick="clearSignatureCanvas()">Clear</button>
+      <button class="btn btn-sm btn-success" type="button" onclick="saveSignature(${j.id})">Save Signature</button>
+    </div>
+    <div id="signaturePreviewBox">${signaturePreview}</div>
+
+    <h6 class="mt-3">Timeline</h6>
+    <ul>${timeline}</ul>`;
+  setupSignatureCanvas();
+  hydrateProtectedImages();
+}
+
+function escapeHtml(value){
+  return String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");
+}
+
+async function hydrateProtectedImages(){
+  const nodes=[...document.querySelectorAll('[data-protected-src]')];
+  for(const node of nodes){
+    try{
+      const res=await axios.get(node.dataset.protectedSrc,{headers:authHeaders,responseType:'blob'});
+      const url=URL.createObjectURL(res.data);
+      state.previewUrls.push(url);
+      node.src=url;
+    }catch(e){
+      node.replaceWith(document.createTextNode('Cannot load image'));
+    }
+  }
+}
+
+function setupSignatureCanvas(){
+  const canvas=document.getElementById('signatureCanvas');
+  if(!canvas) return;
+  const ratio=window.devicePixelRatio || 1;
+  const rect=canvas.getBoundingClientRect();
+  canvas.width=Math.max(rect.width*ratio, 320);
+  canvas.height=Math.max(rect.height*ratio, 180);
+  const ctx=canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth=2;
+  ctx.lineCap='round';
+  ctx.strokeStyle='#212529';
+  signatureState.drawing=false;
+  signatureState.hasStroke=false;
+  canvas.onpointerdown=event=>{
+    signatureState.drawing=true;
+    signatureState.hasStroke=true;
+    const point=getCanvasPoint(canvas,event);
+    ctx.beginPath();
+    ctx.moveTo(point.x,point.y);
+  };
+  canvas.onpointermove=event=>{
+    if(!signatureState.drawing) return;
+    const point=getCanvasPoint(canvas,event);
+    ctx.lineTo(point.x,point.y);
+    ctx.stroke();
+  };
+  const stop=()=>{ signatureState.drawing=false; };
+  canvas.onpointerup=stop;
+  canvas.onpointerleave=stop;
+}
+
+function getCanvasPoint(canvas,event){
+  const rect=canvas.getBoundingClientRect();
+  return { x:event.clientX-rect.left, y:event.clientY-rect.top };
+}
+
+function clearSignatureCanvas(){
+  const canvas=document.getElementById('signatureCanvas');
+  if(!canvas) return;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  signatureState.hasStroke=false;
+}
+
+async function saveSignature(jobId){
+  const canvas=document.getElementById('signatureCanvas');
+  if(!canvas || !signatureState.hasStroke){ showMessage('Please provide a signature first','warning'); return; }
+  try{
+    await axios.post('/api/jobs/'+jobId+'/signature',{imageData:canvas.toDataURL('image/png')},{headers:authHeaders});
+    showMessage('Signature saved','success');
+    await selectJob(jobId);
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function uploadImages(e,id){
+  e.preventDefault();
+  const input=document.getElementById('jobImagesInput');
+  if(!input.files.length){ showMessage('Please select image files','warning'); return; }
+  const formData=new FormData();
+  [...input.files].forEach(file=>formData.append('files',file));
+  try{
+    await axios.post('/api/jobs/'+id+'/images',formData,{headers:{...authHeaders,'Content-Type':'multipart/form-data'}});
+    input.value='';
+    showMessage('Images uploaded','success');
+    await loadJobs();
+    await selectJob(id);
+  }catch(e2){ showMessage(resolveError(e2),'danger'); }
+}
+
+async function downloadReport(id){
+  try{
+    const res=await axios.get('/api/jobs/'+id+'/report',{headers:authHeaders,responseType:'blob'});
+    const url=URL.createObjectURL(res.data);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='job-'+id+'-report.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showMessage('PDF exported','success');
+  }catch(e){ showMessage(resolveError(e),'danger'); }
+}
+
+async function submitJob(e){ e.preventDefault(); const id=document.getElementById('jobId').value;
+  const payload={ title:title.value.trim(), description:description.value.trim(), customerName:customerName.value.trim(), serviceAddress:serviceAddress.value.trim(), scheduledDate:scheduledDate.value, priority:priority.value };
+  try{ if(id){ await axios.put('/api/jobs/'+id,payload,{headers:authHeaders}); showMessage('Job updated','success'); } else { await axios.post('/api/jobs',payload,{headers:authHeaders}); showMessage('Job created','success'); }
+    resetJobForm(); state.selected=null; await loadJobs();
+  }catch(e2){ showMessage(resolveError(e2),'danger'); }
+}
+function editJob(id){ selectJob(id).then(()=>{ const j=state.selected; jobId.value=j.id; title.value=j.title; description.value=j.description||''; customerName.value=j.customerName; serviceAddress.value=j.serviceAddress; scheduledDate.value=j.scheduledDate; priority.value=j.priority; jobSubmitBtn.textContent='Update Job'; }); }
+function resetJobForm(){ document.getElementById('jobForm').reset(); jobId.value=''; priority.value='MEDIUM'; jobSubmitBtn.textContent='Save Job'; }
+async function deleteJob(id){ if(!confirm('Delete job?')) return; try{ await axios.delete('/api/jobs/'+id,{headers:authHeaders}); showMessage('Deleted','success'); state.selected=null; await loadJobs(); }catch(e){ showMessage(resolveError(e),'danger'); }}
+
+async function addChecklist(e,id){ e.preventDefault(); try{ await axios.post('/api/jobs/'+id+'/checklist',{itemName:checkName.value.trim(),note:checkNote.value.trim()},{headers:authHeaders}); showMessage('Checklist added','success'); await loadJobs(); await selectJob(id);}catch(er){ showMessage(resolveError(er),'danger'); }}
+async function toggleChecklist(jobId,itemId,completed){ try{ await axios.patch('/api/jobs/'+jobId+'/checklist/'+itemId,{completed},{headers:authHeaders}); showMessage('Checklist updated','success'); await loadJobs(); await selectJob(jobId);}catch(er){ showMessage(resolveError(er),'danger'); }}
+
+async function updateJobStatus(id, newStatus) {
+  try {
+    await axios.patch('/api/jobs/'+id+'/status', {status: newStatus}, {headers: authHeaders});
+    showMessage('Status updated to ' + newStatus, 'success');
+    await loadJobs();
+    await selectJob(id);
+  } catch(er) {
+    showMessage(resolveError(er), 'danger');
+  }
+}
+
+async function assignJob(e,id){
+  e.preventDefault(); 
+  try{ 
+    await axios.post('/api/jobs/'+id+'/assign',{
+      technicianId:Number(document.getElementById('assignTechId').value),
+      note:document.getElementById('assignNote').value.trim()
+    },{headers:authHeaders}); 
+    showMessage('Job assigned successfully','success'); 
+    await loadJobs(); 
+    await selectJob(id);
+  }catch(er){ 
+    showMessage(resolveError(er),'danger'); 
+  }
+}
+
+async function usePart(e,id){ e.preventDefault(); try{ await axios.post('/api/jobs/'+id+'/parts-usage',{partId:Number(usePartId.value),quantityUsed:Number(useQty.value),note:useNote.value.trim()},{headers:authHeaders}); showMessage('Part usage recorded','success'); await loadParts(); await loadJobs(); await selectJob(id);}catch(er){ showMessage(resolveError(er),'danger'); }}
+
+async function loadTechnicians(){ 
+  if(!isAdmin) return;
+  try{ 
+    const r=await axios.get('/api/users/technicians',{headers:authHeaders}); 
+    state.technicians=r.data||[]; 
+  }catch(e){ 
+    showMessage(resolveError(e),'danger'); 
+  }
+}
+
+async function loadParts(){ try{ const r=await axios.get('/api/parts',{headers:authHeaders}); state.parts=r.data||[]; renderParts(); }catch(e){ showMessage(resolveError(e),'danger'); }}
+function renderParts(){ const b=document.getElementById('partsList'); if(!b) return; if(!state.parts.length){ b.innerHTML='No parts'; return; }
+  b.innerHTML=state.parts.map(p=>`<div class="border rounded p-2 mb-1"><strong>${p.partCode}</strong>${p.barcode?` <span class="text-muted">(${escapeHtml(p.barcode)})</span>`:''} ${p.partName} | stock ${p.stockQuantity}
+  ${isAdmin?`<div><button class="btn btn-sm btn-outline-primary" onclick="editPart(${p.id})">Edit</button><button class="btn btn-sm btn-outline-dark" onclick="showPartQr(${p.id})">QR</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},10)">+10</button><button class="btn btn-sm btn-outline-secondary" onclick="adjustStock(${p.id},-10)">-10</button><button class="btn btn-sm btn-outline-danger" onclick="deletePart(${p.id})">Delete</button></div>`:''}</div>`).join(''); }
+
+async function submitPart(e){ e.preventDefault(); const id=partId.value; const payload={ partCode:partCode.value.trim(), barcode:partBarcode.value.trim() || null, partName:partName.value.trim(), unit:partUnit.value.trim(), stockQuantity:Number(partStock.value), minimumStockLevel:Number(partMinStock.value), active:partActive.value==='true', stepTemplates:partSteps.value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean) };
+  try{ const res=id ? await axios.put('/api/parts/'+id,payload,{headers:authHeaders}) : await axios.post('/api/parts',payload,{headers:authHeaders}); showMessage(id?'Part updated':'Part created','success');
+    resetPartForm(); await loadParts(); renderLookupResults(); showPartQr(res.data.id); if(state.selected) renderSelected(); }catch(er){ showMessage(resolveError(er),'danger'); }}
+function editPart(id){ const p=state.parts.find(x=>x.id===id); if(!p) return; partId.value=p.id; partCode.value=p.partCode; partBarcode.value=p.barcode || ''; partName.value=p.partName; partUnit.value=p.unit; partStock.value=p.stockQuantity; partMinStock.value=p.minimumStockLevel; partActive.value=String(p.active); partSteps.value=(p.stepTemplates||[]).join('\n'); partSubmitBtn.textContent='Update Part'; showPartQr(id); }
+function resetPartForm(){ document.getElementById('partForm').reset(); partId.value=''; partBarcode.value=''; partUnit.value='pcs'; partActive.value='true'; partSteps.value=''; partSubmitBtn.textContent='Save Part'; document.getElementById('partQrPanel').classList.add('d-none'); document.getElementById('partQrCode').innerHTML=''; }
+function showPartQr(id){ const p=state.parts.find(x=>x.id===id); if(!p) return; const panel=document.getElementById('partQrPanel'); const codeBox=document.getElementById('partQrCode'); panel.classList.remove('d-none'); document.getElementById('partQrTitle').textContent=`QR: ${p.partCode} - ${p.partName}`; document.getElementById('partQrValue').textContent=p.barcode || ''; codeBox.innerHTML=''; if(typeof QRCode==='undefined'){ codeBox.textContent='QR library is not loaded'; return; } new QRCode(codeBox,{ text:p.barcode, width:180, height:180 }); }
+async function adjustStock(id,deltaQuantity){ try{ await axios.patch('/api/parts/'+id+'/stock',{deltaQuantity},{headers:authHeaders}); showMessage('Stock adjusted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
+async function deletePart(id){ if(!confirm('Delete part?')) return; try{ await axios.delete('/api/parts/'+id,{headers:authHeaders}); showMessage('Part deleted','success'); await loadParts(); }catch(er){ showMessage(resolveError(er),'danger'); }}
+
+window.addEventListener('beforeunload', () => {
+  cleanupPreviewUrls();
+  if(state.notificationPoller) clearInterval(state.notificationPoller);
+  stopScanner();
+});
+init();
+</script>
+</body>
+</html>

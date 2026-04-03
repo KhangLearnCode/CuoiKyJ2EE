@@ -24,6 +24,7 @@ const state = {
 };
 
 const signatureState = { drawing: false, hasStroke: false };
+const EMPTY_IMAGE_SRC = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22 viewBox=%220 0 1 1%22%3E%3Crect width=%221%22 height=%221%22 fill=%22%23ffffff%22 fill-opacity=%220%22/%3E%3C/svg%3E';
 
 // Utility Functions
 function showMessage(m, t) {
@@ -166,7 +167,7 @@ async function loadTechnicians() {
 async function loadParts() {
   try {
     const res = await axios.get('/api/parts', { headers: authHeaders });
-    state.parts = res.data.content || [];
+    state.parts = Array.isArray(res.data) ? res.data : (res.data.content || []);
   } catch(e) {
     console.warn('Failed to load parts', e);
   }
@@ -305,6 +306,12 @@ async function hydrateProtectedImages() {
       state.previewUrls.push(objectUrl);
     } catch(e) {
       console.warn('Failed to load protected image:', protectedUrl, e);
+      const card = img.closest('[data-protected-card]');
+      if (card) {
+        card.remove();
+      } else {
+        img.remove();
+      }
     }
   }
 }

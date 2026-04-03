@@ -670,21 +670,30 @@ function renderSelected(){
   cleanupPreviewUrls();
   const b=document.getElementById('selectedJobBox'); const j=state.selected;
   if(!j){ b.innerHTML='<div class="text-muted">Select job</div>'; return; }
-  const partOptions = state.parts.filter(x=>x.active).map(x=>`<option value="${x.id}">${x.partCode} (${x.stockQuantity})</option>`).join('');
+  const partOptionsRaw = state.parts.filter(x=>x.active).map(x=>`<option value="${x.id}">${x.partCode} (${x.stockQuantity})</option>`).join('');
+  const partOptions = partOptionsRaw || '<option value="" disabled selected>No active parts available</option>';
   const checklist=(j.checklist||[]).map(i=>`<div class="border rounded p-2 mb-2"><div><strong>${i.itemName}</strong> - ${i.completed?'DONE':'TODO'}</div>
       <div class="small text-muted">${i.note||''}</div><button class="btn btn-sm ${i.completed?'btn-outline-warning':'btn-outline-success'}" onclick="toggleChecklist(${j.id},${i.id},${!i.completed})">${i.completed?'Undo':'Done'}</button></div>`).join('') || '<div class="text-muted">No checklist</div>';
   const parts=(j.usedParts||[]).map(u=>`<li>${u.partCode} - ${u.quantityUsed} ${u.unit} (${u.usedBy||'system'})</li>`).join('') || '<li>No part usage</li>';
   const timeline=(j.timeline||[]).map(t=>`<li>${t.activityType}: ${t.message}</li>`).join('') || '<li>No timeline</li>';
   const images=(j.images||[]).map(img=>`<div class="col-6">
-      <div class="border rounded p-2 h-100">
-        <img class="job-image mb-2" alt="${escapeHtml(img.fileName)}" data-protected-src="${img.imageUrl}"/>
+      <div class="border rounded p-2 h-100" data-protected-card>
+        <div class="d-flex justify-content-end mb-2">
+          <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteImage(${j.id}, ${img.id})">Delete Image</button>
+        </div>
+        <img class="job-image mb-2" alt="${escapeHtml(img.fileName)}" src="${EMPTY_IMAGE_SRC}" data-protected-src="${img.imageUrl}"/>
         <div class="small fw-semibold text-break">${escapeHtml(img.fileName)}</div>
         <div class="small text-muted">${escapeHtml(img.uploadedBy||'system')} ${img.uploadedAt?'- '+formatDateTime(img.uploadedAt):''}</div>
       </div>
     </div>`).join('') || '<div class="text-muted">No uploaded images</div>';
   const signaturePreview=j.signatureImageUrl
-    ? `<img class="img-fluid border rounded p-2 bg-white" alt="signature" data-protected-src="${j.signatureImageUrl}"/>
-       <div class="small text-muted mt-1">Signed by ${escapeHtml(j.signatureSignedBy||'')} ${j.signatureSignedAt?'at '+formatDateTime(j.signatureSignedAt):''}</div>`
+    ? `<div class="border rounded p-2 bg-white">
+         <div class="d-flex justify-content-end mb-2">
+           <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteSignature(${j.id})">Delete Signature</button>
+         </div>
+         <img class="img-fluid border rounded p-2 bg-white" alt="signature" src="${EMPTY_IMAGE_SRC}" data-protected-src="${j.signatureImageUrl}"/>
+         <div class="small text-muted mt-1">Signed by ${escapeHtml(j.signatureSignedBy||'')} ${j.signatureSignedAt?'at '+formatDateTime(j.signatureSignedAt):''}</div>
+       </div>`
     : '<div class="text-muted">No signature</div>';
 
   b.innerHTML=`<div><strong>${j.jobCode}</strong> ${j.title}</div>
@@ -743,7 +752,9 @@ function renderSelected(){
     <h6 class="mt-3">Upload Images</h6>
     <form onsubmit="uploadImages(event,${j.id})" class="mb-2">
       <input id="jobImagesInput" type="file" class="form-control form-control-sm mb-2" accept="image/*" multiple required/>
-      <button class="btn btn-sm btn-primary">Upload Images</button>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-primary" type="submit">Upload Images</button>
+      </div>
     </form>
     <div class="row g-2">${images}</div>
 
@@ -847,6 +858,32 @@ async function uploadImages(e,id){
     await loadJobs();
     await selectJob(id);
   }catch(e2){ showMessage(resolveError(e2),'danger'); }
+}
+
+async function deleteImage(jobId, imageId){
+  if(!confirm('Delete this image?')) return;
+
+  try{
+    await axios.delete('/api/jobs/'+jobId+'/images/'+imageId,{headers:authHeaders});
+    showMessage('Image deleted','success');
+    await loadJobs();
+    await selectJob(jobId);
+  }catch(e){
+    showMessage(resolveError(e),'danger');
+  }
+}
+
+async function deleteSignature(jobId){
+  if(!confirm('Delete this signature?')) return;
+
+  try{
+    await axios.delete('/api/jobs/'+jobId+'/signature',{headers:authHeaders});
+    showMessage('Signature deleted','success');
+    await loadJobs();
+    await selectJob(jobId);
+  }catch(e){
+    showMessage(resolveError(e),'danger');
+  }
 }
 
 async function downloadReport(id){

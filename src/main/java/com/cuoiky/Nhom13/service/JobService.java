@@ -421,6 +421,27 @@ public class JobService {
         return toResponse(jobRepository.findById(jobId).orElseThrow());
     }
 
+    public JobResponse deleteImage(Long jobId, Long imageId, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        JobImage image = jobImageRepository.findById(imageId)
+                .orElseThrow(() -> new IllegalArgumentException("Image not found"));
+        if (!image.getJob().getId().equals(job.getId())) {
+            throw new IllegalArgumentException("Image does not belong to this job");
+        }
+
+        jobStorageService.deleteFile(image.getStoragePath());
+        job.getImages().removeIf(existing -> existing.getId().equals(imageId));
+        jobImageRepository.delete(image);
+
+        User actor = userRepository.findByUsername(username).orElse(null);
+        saveActivity(job, JobActivityType.IMAGE_DELETED, actor, job.getStatus(), job.getStatus(),
+                "Deleted image " + image.getFileName());
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
     public JobResponse saveSignature(Long jobId, String imageData, String username, boolean isAdmin) {
         Job job = getJobEntity(jobId);
         if (!isAdmin) {
@@ -435,6 +456,48 @@ public class JobService {
         jobRepository.save(job);
         saveActivity(job, JobActivityType.SIGNATURE_CAPTURED, actor, job.getStatus(), job.getStatus(),
                 "Electronic signature captured");
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    public JobResponse saveSignature(Long jobId, MultipartFile signatureFile, String username, boolean isAdmin) {
+        if (signatureFile == null || signatureFile.isEmpty()) {
+            throw new IllegalArgumentException("Signature file is required");
+        }
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        User actor = userRepository.findByUsername(username).orElse(null);
+        JobStorageService.StoredFile storedFile = jobStorageService.storeSignature(jobId, signatureFile);
+        job.setSignaturePath(storedFile.storagePath());
+        job.setSignatureContentType(storedFile.contentType());
+        job.setSignatureSignedBy(username);
+        job.setSignatureSignedAt(LocalDateTime.now());
+        jobRepository.save(job);
+        saveActivity(job, JobActivityType.SIGNATURE_CAPTURED, actor, job.getStatus(), job.getStatus(),
+                "Electronic signature captured");
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    public JobResponse deleteSignature(Long jobId, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+        if (!StringUtils.hasText(job.getSignaturePath())) {
+            throw new IllegalArgumentException("Signature not found");
+        }
+
+        jobStorageService.deleteSignature(job.getSignaturePath());
+        job.setSignaturePath(null);
+        job.setSignatureContentType(null);
+        job.setSignatureSignedBy(null);
+        job.setSignatureSignedAt(null);
+        jobRepository.save(job);
+
+        User actor = userRepository.findByUsername(username).orElse(null);
+        saveActivity(job, JobActivityType.SIGNATURE_CAPTURED, actor, job.getStatus(), job.getStatus(),
+                "Electronic signature deleted");
         return toResponse(jobRepository.findById(jobId).orElseThrow());
     }
 

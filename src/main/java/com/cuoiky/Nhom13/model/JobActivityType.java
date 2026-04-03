@@ -8,6 +8,7 @@ public enum JobActivityType {
     CHECKLIST_UPDATED,
     PART_USED,
     IMAGE_UPLOADED,
+    IMAGE_DELETED,
     SIGNATURE_CAPTURED,
     REPORT_EXPORTED
 }

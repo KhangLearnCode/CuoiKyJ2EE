@@ -59,6 +59,25 @@ public class JobStorageService {
         return new StoredFile(target.getFileName().toString(), "image/png", target.toString());
     }
 
+    public StoredFile storeSignature(Long jobId, MultipartFile file) {
+        validateImageContentType(file.getContentType());
+        byte[] data;
+        try {
+            data = file.getBytes();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to read signature file", ex);
+        }
+        Path jobFolder = createJobFolder(jobId, "signatures");
+        Path target = jobFolder.resolve("signature-" + UUID.randomUUID() + ".png");
+        try {
+            Files.write(target, data);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to store signature", ex);
+        }
+        String originalFileName = StringUtils.hasText(file.getOriginalFilename()) ? file.getOriginalFilename() : target.getFileName().toString();
+        return new StoredFile(originalFileName, "image/png", target.toString());
+    }
+
     public Resource loadAsResource(String storagePath) {
         Path path = Paths.get(storagePath).toAbsolutePath().normalize();
         if (!path.startsWith(rootPath)) {
@@ -69,6 +88,22 @@ public class JobStorageService {
             throw new IllegalArgumentException("File not found");
         }
         return resource;
+    }
+
+    public void deleteFile(String storagePath) {
+        Path path = Paths.get(storagePath).toAbsolutePath().normalize();
+        if (!path.startsWith(rootPath)) {
+            throw new IllegalArgumentException("Invalid file path");
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to delete file", ex);
+        }
+    }
+
+    public void deleteSignature(String storagePath) {
+        deleteFile(storagePath);
     }
 
     private Path createJobFolder(Long jobId, String child) {

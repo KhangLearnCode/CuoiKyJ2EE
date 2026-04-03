@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -76,12 +77,25 @@ public class JobExecutionController {
     @PostMapping(path = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<JobResponse> uploadImages(@PathVariable Long id,
-                                                    @RequestParam("files") MultipartFile[] files,
+                                                    @RequestParam(value = "files", required = false) MultipartFile[] files,
+                                                    @RequestParam(value = "images", required = false) MultipartFile[] images,
                                                     Authentication authentication) {
         UserDetailsImpl currentUser = (UserDetailsImpl) authentication.getPrincipal();
         boolean isAdmin = currentUser.getAuthorities().stream()
                 .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
-        return ResponseEntity.ok(jobService.uploadImages(id, files, currentUser.getUsername(), isAdmin));
+        MultipartFile[] effectiveFiles = (files != null && files.length > 0) ? files : images;
+        return ResponseEntity.ok(jobService.uploadImages(id, effectiveFiles, currentUser.getUsername(), isAdmin));
+    }
+
+    @DeleteMapping("/{id}/images/{imageId}")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<JobResponse> deleteImage(@PathVariable Long id,
+                                                   @PathVariable Long imageId,
+                                                   Authentication authentication) {
+        UserDetailsImpl currentUser = (UserDetailsImpl) authentication.getPrincipal();
+        boolean isAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        return ResponseEntity.ok(jobService.deleteImage(id, imageId, currentUser.getUsername(), isAdmin));
     }
 
     @GetMapping("/{id}/images/{imageId}")
@@ -109,6 +123,26 @@ public class JobExecutionController {
         boolean isAdmin = currentUser.getAuthorities().stream()
                 .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
         return ResponseEntity.ok(jobService.saveSignature(id, request.getImageData(), currentUser.getUsername(), isAdmin));
+    }
+
+    @PostMapping(path = "/{id}/signature", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<JobResponse> saveSignatureMultipart(@PathVariable Long id,
+                                                              @RequestParam("signature") MultipartFile signature,
+                                                              Authentication authentication) {
+        UserDetailsImpl currentUser = (UserDetailsImpl) authentication.getPrincipal();
+        boolean isAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        return ResponseEntity.ok(jobService.saveSignature(id, signature, currentUser.getUsername(), isAdmin));
+    }
+
+    @DeleteMapping("/{id}/signature")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<JobResponse> deleteSignature(@PathVariable Long id, Authentication authentication) {
+        UserDetailsImpl currentUser = (UserDetailsImpl) authentication.getPrincipal();
+        boolean isAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        return ResponseEntity.ok(jobService.deleteSignature(id, currentUser.getUsername(), isAdmin));
     }
 
     @GetMapping("/{id}/signature/image")

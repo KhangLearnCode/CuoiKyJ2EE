@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 
@@ -96,7 +95,7 @@ public class JobReportService {
             } else {
                 for (JobImage image : job.getImages().stream().sorted(Comparator.comparing(JobImage::getUploadedAt)).toList()) {
                     document.add(new Paragraph(image.getFileName() + " - " + (image.getUploadedBy() != null ? image.getUploadedBy() : "system")));
-                    document.add(loadImage(image.getStoragePath(), 220));
+                    document.add(loadImageOrPlaceholder(image.getStoragePath(), 220, "Image unavailable"));
                 }
             }
 
@@ -106,7 +105,7 @@ public class JobReportService {
             } else {
                 document.add(new Paragraph("Signed by: " + (job.getSignatureSignedBy() != null ? job.getSignatureSignedBy() : "")));
                 document.add(new Paragraph("Signed at: " + (job.getSignatureSignedAt() != null ? job.getSignatureSignedAt().format(DATE_TIME_FORMATTER) : "")));
-                document.add(loadImage(job.getSignaturePath(), 180));
+                document.add(loadImageOrPlaceholder(job.getSignaturePath(), 180, "Signature image unavailable"));
             }
 
             document.close();
@@ -116,12 +115,17 @@ public class JobReportService {
         }
     }
 
-    private Image loadImage(String storagePath, float maxHeight) throws IOException {
-        Resource resource = jobStorageService.loadAsResource(storagePath);
-        Image image = new Image(ImageDataFactory.create(Files.readAllBytes(resource.getFile().toPath())));
-        image.setAutoScale(true);
-        image.setMaxHeight(maxHeight);
-        return image;
+    private Paragraph loadImageOrPlaceholder(String storagePath, float maxHeight, String fallbackText) {
+        try {
+            Resource resource = jobStorageService.loadAsResource(storagePath);
+            byte[] bytes = resource.getInputStream().readAllBytes();
+            Image image = new Image(ImageDataFactory.create(bytes));
+            image.setAutoScale(true);
+            image.setMaxHeight(maxHeight);
+            return new Paragraph().add(image);
+        } catch (IOException | IllegalArgumentException ex) {
+            return new Paragraph(fallbackText).setItalic();
+        }
     }
 
     private Cell headerCell(String value) {

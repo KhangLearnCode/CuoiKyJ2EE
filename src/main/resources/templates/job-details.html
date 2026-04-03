@@ -560,7 +560,7 @@ async function uploadImages(e, jobId) {
 
 async function downloadReport(jobId) {
   try {
-    const res = await axios.get('/api/jobs/' + jobId + '/pdf', {
+    const res = await axios.get('/api/jobs/' + jobId + '/report', {
       headers: authHeaders,
       responseType: 'blob'
     });

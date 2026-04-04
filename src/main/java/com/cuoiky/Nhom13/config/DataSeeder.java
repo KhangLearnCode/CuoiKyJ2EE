@@ -53,7 +53,15 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (!seedEnabled || jobRepository.count() > 0) {
+        if (!seedEnabled) {
+            return;
+        }
+
+        ensureStockAtLeast("P-ROUTER", 1000);
+        ensureStockAtLeast("P-CABLE", 1000);
+        ensureStockAtLeast("P-SENSOR", 1000);
+
+        if (jobRepository.count() > 0) {
             return;
         }
 
@@ -64,16 +72,16 @@ public class DataSeeder implements CommandLineRunner {
         User tech3 = createUserIfMissing("tech03", "tech03@fsm.local", "123456", Set.of(ERole.ROLE_USER));
 
         // Create Parts
-        Part part1 = createPartIfMissing("P-ROUTER", "Fiber Router", "pcs", 50, 10);
-        Part part2 = createPartIfMissing("P-CABLE", "UTP Cable (meter)", "meter", 500, 100);
-        Part part3 = createPartIfMissing("P-SENSOR", "Temperature Sensor", "pcs", 40, 5);
-        Part part4 = createPartIfMissing("P-SWITCH", "Network Switch 24-port", "pcs", 25, 5);
-        Part part5 = createPartIfMissing("P-MODEM", "ADSL Modem", "pcs", 60, 15);
-        Part part6 = createPartIfMissing("P-BATTERY", "UPS Battery 12V", "pcs", 30, 8);
-        Part part7 = createPartIfMissing("P-CONNECTOR", "RJ45 Connector", "pcs", 200, 50);
-        Part part8 = createPartIfMissing("P-CABLE-FO", "Fiber Optic Cable (meter)", "meter", 300, 50);
-        Part part9 = createPartIfMissing("P-ANTENNA", "WiFi Antenna", "pcs", 35, 10);
-        Part part10 = createPartIfMissing("P-POWER", "Power Adapter 12V 2A", "pcs", 45, 10);
+        Part part1 = createPartIfMissing("P-ROUTER", "Fiber Router", "pcs", 1000, 10);
+        Part part2 = createPartIfMissing("P-CABLE", "UTP Cable (meter)", "meter", 1000, 100);
+        Part part3 = createPartIfMissing("P-SENSOR", "Temperature Sensor", "pcs", 1000, 5);
+        Part part4 = createPartIfMissing("P-SWITCH", "Network Switch 24-port", "pcs", 1000, 5);
+        Part part5 = createPartIfMissing("P-MODEM", "ADSL Modem", "pcs", 1000, 15);
+        Part part6 = createPartIfMissing("P-BATTERY", "UPS Battery 12V", "pcs", 1000, 8);
+        Part part7 = createPartIfMissing("P-CONNECTOR", "RJ45 Connector", "pcs", 1000, 50);
+        Part part8 = createPartIfMissing("P-CABLE-FO", "Fiber Optic Cable (meter)", "meter", 1000, 50);
+        Part part9 = createPartIfMissing("P-ANTENNA", "WiFi Antenna", "pcs", 1000, 10);
+        Part part10 = createPartIfMissing("P-POWER", "Power Adapter 12V 2A", "pcs", 1000, 10);
 
         // Create Jobs - Various statuses and priorities
         Long job1 = createJob("Install Fiber Router", "Survey and install router for VIP customer",
@@ -172,6 +180,15 @@ public class DataSeeder implements CommandLineRunner {
             part.setMinimumStockLevel(minStock);
             part.setActive(true);
             return partRepository.save(part);
+        });
+    }
+
+    private void ensureStockAtLeast(String partCode, int stock) {
+        partRepository.findByPartCode(partCode).ifPresent(part -> {
+            if (part.getStockQuantity() == null || part.getStockQuantity() < stock) {
+                part.setStockQuantity(stock);
+                partRepository.save(part);
+            }
         });
     }
 

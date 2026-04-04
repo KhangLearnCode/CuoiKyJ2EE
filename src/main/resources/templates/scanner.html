@@ -76,7 +76,7 @@
     <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-wrapper">
       <div class="pt-3 pb-2 mb-3">
         <h1 class="h3">QR / Barcode Scanner</h1>
-        <p class="text-muted small">Scan barcodes and QR codes to lookup parts information</p>
+        <p class="text-muted small">Scan barcodes and QR codes to lookup jobs or parts information</p>
       </div>
 
       <div id="messageBox" class="alert d-none"></div>
@@ -95,14 +95,18 @@
             </div>
             <div class="card-body">
               <div id="scannerReader"></div>
-              <div class="d-flex gap-2 mt-3">
+              <div class="d-flex gap-2 mt-3 flex-wrap">
                 <button id="startScanBtn" class="btn btn-primary" onclick="startScanner()">
                   <i class="bi-camera"></i> Start Camera
                 </button>
                 <button id="stopScanBtn" class="btn btn-danger d-none" onclick="stopScanner()">
                   <i class="bi-stop-circle"></i> Stop Camera
                 </button>
+                <button class="btn btn-outline-primary" type="button" onclick="chooseQrImage()">
+                  <i class="bi-upload"></i> Upload QR Image
+                </button>
               </div>
+              <input id="qrImageInput" type="file" accept="image/*" class="d-none" onchange="handleQrImageSelected(event)"/>
               <div id="scanStatus" class="small text-muted mt-2"></div>
             </div>
           </div>
@@ -144,6 +148,19 @@
 
         <!-- Right Column: Lookup Results -->
         <div class="col-lg-6">
+          <div class="card custom-block mb-3">
+            <div class="card-header">
+              <h6 class="mb-0">Job Result</h6>
+            </div>
+            <div class="card-body">
+              <div id="jobLookupResults">
+                <div class="text-muted text-center py-4">
+                  <i class="bi-briefcase" style="font-size: 2.5rem; opacity: 0.3;"></i>
+                  <p class="mt-2 mb-0">Upload a job QR image or scan a job QR to see job details</p>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="card custom-block">
             <div class="card-header">
               <h6 class="mb-0">Lookup Results</h6>
@@ -228,10 +245,22 @@ async function stopScanner() {
 }
 
 // On scan success
-function onScanSuccess(decodedText, decodedResult) {
+async function onScanSuccess(decodedText, decodedResult) {
+  await handleDecodedValue(decodedText);
+}
+
+async function handleDecodedValue(decodedText) {
   const statusDiv = document.getElementById('scanStatus');
   statusDiv.textContent = 'Scanned: ' + decodedText;
   statusDiv.className = 'small text-info mt-2';
+
+  const jobId = extractJobIdFromValue(decodedText);
+  if (jobId) {
+    await loadJobFromQr(jobId);
+    statusDiv.textContent = 'Job QR detected. Job information loaded.';
+    statusDiv.className = 'small text-success mt-2';
+    return;
+  }
   
   // Auto lookup
   document.getElementById('lookupInput').value = decodedText;
@@ -246,6 +275,83 @@ function onScanFailure(error) {
   // Don't show errors for continuous scanning
 }
 
+function extractJobIdFromValue(value) {
+  try {
+    const url = new URL(value, window.location.origin);
+    const jobId = url.searchParams.get('id');
+    if (url.pathname === '/jobs/details' && jobId) {
+      return jobId;
+    }
+  } catch (e) {
+    if (/^\d+$/.test(String(value).trim())) {
+      return String(value).trim();
+    }
+  }
+  return null;
+}
+
+async function loadJobFromQr(jobId) {
+  try {
+    if (scannerInstance && scannerRunning) {
+      await stopScanner();
+    }
+
+    const res = await axios.get('/api/jobs/' + jobId, {
+      headers: authHeaders
+    });
+
+    state.jobLookupResult = res.data;
+    state.lookupResult = null;
+    state.lookupSearchResults = [];
+    renderLookupResults();
+  } catch (e) {
+    showMessage(resolveError(e), 'danger');
+  }
+}
+
+function chooseQrImage() {
+  const input = document.getElementById('qrImageInput');
+  if (input) input.click();
+}
+
+async function handleQrImageSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const statusDiv = document.getElementById('scanStatus');
+  statusDiv.textContent = 'Reading QR image...';
+  statusDiv.className = 'small text-muted mt-2';
+
+  try {
+    if (scannerInstance && scannerRunning) {
+      await stopScanner();
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      showMessage('Scanner library not loaded. Please refresh the page.', 'danger');
+      return;
+    }
+
+    const imageScanner = new Html5Qrcode('scannerReader');
+    try {
+      const decodedText = await imageScanner.scanFile(file, true);
+      await handleDecodedValue(decodedText);
+    } finally {
+      try {
+        await imageScanner.clear();
+      } catch (e) {
+        // ignore clear errors
+      }
+    }
+  } catch (e) {
+    showMessage('Unable to read QR image: ' + resolveError(e), 'danger');
+    statusDiv.textContent = 'Unable to read QR image.';
+    statusDiv.className = 'small text-danger mt-2';
+  } finally {
+    event.target.value = '';
+  }
+}
+
 // Lookup part by barcode/code
 async function lookupPart() {
   const input = document.getElementById('lookupInput').value.trim();
@@ -254,11 +360,13 @@ async function lookupPart() {
     showMessage('Please enter a barcode or part code', 'warning');
     return;
   }
+
+  state.jobLookupResult = null;
   
   try {
     const res = await axios.get('/api/parts/lookup', {
       headers: authHeaders,
-      params: { value: input }
+      params: { code: input }
     });
     
     state.lookupResult = res.data;
@@ -283,6 +391,8 @@ async function searchParts() {
     showMessage('Please enter a search keyword', 'warning');
     return;
   }
+
+  state.jobLookupResult = null;
   
   try {
     const res = await axios.get('/api/parts/search', {
@@ -305,6 +415,34 @@ async function searchParts() {
 // Render lookup results
 function renderLookupResults() {
   const box = document.getElementById('lookupResults');
+
+  if (state.jobLookupResult) {
+    const j = state.jobLookupResult;
+    box.innerHTML = `
+      <div class="lookup-result">
+        <h5 class="mb-2">${escapeHtml(j.jobCode)}</h5>
+        <h6 class="text-muted mb-3">${escapeHtml(j.title)}</h6>
+
+        <p class="mb-1"><strong>Customer:</strong> ${escapeHtml(j.customerName)}</p>
+        <p class="mb-1"><strong>Address:</strong> ${escapeHtml(j.serviceAddress)}</p>
+        <p class="mb-1"><strong>Status:</strong> <span class="badge bg-info">${escapeHtml(j.status)}</span></p>
+        <p class="mb-1"><strong>Priority:</strong> <span class="badge bg-secondary">${escapeHtml(j.priority)}</span></p>
+        <p class="mb-1"><strong>Technician:</strong> ${escapeHtml(j.assignedUsername || 'Unassigned')}</p>
+        ${j.scheduledDate ? `<p class="mb-1"><strong>Scheduled:</strong> ${formatDateTime(j.scheduledDate)}</p>` : ''}
+        <p class="mb-1"><strong>Description:</strong> ${escapeHtml(j.description || 'N/A')}</p>
+
+        <div class="mt-3">
+          <button class="btn btn-sm btn-primary" onclick="openJobDetailsFromScanner(${j.id})">
+            <i class="bi-eye"></i> Open Job Details
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="clearJobResult()">
+            Clear
+          </button>
+        </div>
+      </div>
+    `;
+    return;
+  }
   
   // Single result from lookup
   if (state.lookupResult) {
@@ -390,10 +528,20 @@ function renderLookupResults() {
   `;
 }
 
+function openJobDetailsFromScanner(jobId) {
+  window.location.href = '/jobs/details?id=' + encodeURIComponent(jobId);
+}
+
+function clearJobResult() {
+  state.jobLookupResult = null;
+  renderLookupResults();
+}
+
 // Select a search result to view details
 function selectLookupResult(partId) {
   const part = state.lookupSearchResults.find(p => p.id === partId);
   if (part) {
+    state.jobLookupResult = null;
     state.lookupResult = part;
     state.lookupSearchResults = [];
     renderLookupResults();
@@ -428,6 +576,7 @@ function handleSearchKeyup(event) {
 
 // Initialize page
 async function initPage() {
+  state.jobLookupResult = null;
   await loadParts();
 }
 

@@ -74,6 +74,17 @@ public class JobExecutionController {
         return ResponseEntity.ok(jobService.usePart(id, request, currentUser.getUsername(), isAdmin));
     }
 
+    @DeleteMapping("/{id}/parts-usage/{usageId}")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<JobResponse> deletePartUsage(@PathVariable Long id,
+                                                       @PathVariable Long usageId,
+                                                       Authentication authentication) {
+        UserDetailsImpl currentUser = (UserDetailsImpl) authentication.getPrincipal();
+        boolean isAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        return ResponseEntity.ok(jobService.deletePartUsage(id, usageId, currentUser.getUsername(), isAdmin));
+    }
+
     @PostMapping(path = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<JobResponse> uploadImages(@PathVariable Long id,

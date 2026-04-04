@@ -10,6 +10,7 @@
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <div th:replace="~{common-styles.fragment :: styles}"></div>
 </head>
 <body>
@@ -69,6 +70,22 @@
       </div>
 
       <div id="messageBox" class="alert d-none"></div>
+      <div id="jobQrPanel" class="card custom-block mb-3 d-none">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div>
+            <div class="small text-muted">Job QR</div>
+            <div class="fw-semibold" id="jobQrTitle">QR Preview</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-dark" type="button" onclick="downloadJobQr()">Download</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="hideJobQr()">Close</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="small text-muted mb-2" id="jobQrValue"></div>
+          <div id="jobQrCode" class="d-flex justify-content-center"></div>
+        </div>
+      </div>
 
       <!-- Jobs Sub-Navigation -->
       <div th:replace="~{jobs-subnav.fragment :: subnav}"></div>
@@ -399,6 +416,9 @@ function renderJobs() {
           <a href="/jobs/details?id=${j.id}" class="btn btn-sm btn-outline-primary">
             <i class="bi-eye"></i> View Details
           </a>
+          <button class="btn btn-sm btn-outline-dark" onclick="showJobQr(${j.id})">
+            <i class="bi-qr-code"></i> QR
+          </button>
           ${isAdmin ? `
             <button class="btn btn-sm btn-outline-secondary" onclick="editJob(${j.id})">
               <i class="bi-pencil"></i> Edit
@@ -411,6 +431,66 @@ function renderJobs() {
       </div>
     `;
   }).join('');
+}
+
+function hideJobQr() {
+  const panel = document.getElementById('jobQrPanel');
+  const codeBox = document.getElementById('jobQrCode');
+  if (panel) panel.classList.add('d-none');
+  if (codeBox) codeBox.innerHTML = '';
+}
+
+function showJobQr(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) return;
+
+  const panel = document.getElementById('jobQrPanel');
+  const codeBox = document.getElementById('jobQrCode');
+  const titleBox = document.getElementById('jobQrTitle');
+  const valueBox = document.getElementById('jobQrValue');
+  const qrValue = `${window.location.origin}/jobs/details?id=${job.id}`;
+
+  panel.classList.remove('d-none');
+  titleBox.textContent = `${job.jobCode} - ${job.title}`;
+  valueBox.textContent = qrValue;
+  codeBox.innerHTML = '';
+
+  if (typeof QRCode === 'undefined') {
+    codeBox.textContent = 'QR library is not loaded';
+    return;
+  }
+
+  new QRCode(codeBox, {
+    text: qrValue,
+    width: 180,
+    height: 180
+  });
+}
+
+function downloadJobQr() {
+  const panel = document.getElementById('jobQrPanel');
+  const codeBox = document.getElementById('jobQrCode');
+  const titleBox = document.getElementById('jobQrTitle');
+  if (!panel || panel.classList.contains('d-none')) return;
+
+  const canvas = codeBox.querySelector('canvas');
+  const img = codeBox.querySelector('img');
+  const jobTitle = (titleBox?.textContent || 'job-qr').replace(/[^\w.-]+/g, '-').toLowerCase();
+  const link = document.createElement('a');
+  link.download = `${jobTitle}.png`;
+
+  if (canvas && canvas.toDataURL) {
+    link.href = canvas.toDataURL('image/png');
+  } else if (img && img.src) {
+    link.href = img.src;
+  } else {
+    showMessage('QR image is not ready to download', 'warning');
+    return;
+  }
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 // Initialize page

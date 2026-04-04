@@ -45,6 +45,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.persistence.EntityManager;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
@@ -83,6 +84,7 @@ public class JobService {
     private final JobStorageService jobStorageService;
     private final JobReportService jobReportService;
     private final NotificationService notificationService;
+    private final EntityManager entityManager;
 
     public JobService(JobRepository jobRepository,
                       AssignmentRepository assignmentRepository,
@@ -94,7 +96,8 @@ public class JobService {
                       JobImageRepository jobImageRepository,
                       JobStorageService jobStorageService,
                       JobReportService jobReportService,
-                      NotificationService notificationService) {
+                      NotificationService notificationService,
+                      EntityManager entityManager) {
         this.jobRepository = jobRepository;
         this.assignmentRepository = assignmentRepository;
         this.jobActivityRepository = jobActivityRepository;
@@ -106,6 +109,7 @@ public class JobService {
         this.jobStorageService = jobStorageService;
         this.jobReportService = jobReportService;
         this.notificationService = notificationService;
+        this.entityManager = entityManager;
     }
 
     public JobResponse create(JobRequest request) {
@@ -381,6 +385,31 @@ public class JobService {
 
         saveActivity(job, JobActivityType.PART_USED, actor, job.getStatus(), job.getStatus(),
                 "Used " + usage.getQuantityUsed() + " " + part.getUnit() + " of " + part.getPartCode());
+        return toResponse(jobRepository.findById(jobId).orElseThrow());
+    }
+
+    public JobResponse deletePartUsage(Long jobId, Long usageId, String username, boolean isAdmin) {
+        Job job = getJobEntity(jobId);
+        if (!isAdmin) {
+            validateOperator(job, username);
+        }
+
+        JobPartUsage usage = jobPartUsageRepository.findById(usageId)
+                .orElseThrow(() -> new IllegalArgumentException("Part usage not found"));
+        if (!usage.getJob().getId().equals(job.getId())) {
+            throw new IllegalArgumentException("Part usage does not belong to this job");
+        }
+
+        Part part = usage.getPart();
+        part.setStockQuantity(part.getStockQuantity() + usage.getQuantityUsed());
+        partRepository.save(part);
+        jobPartUsageRepository.delete(usage);
+        jobPartUsageRepository.flush();
+        entityManager.clear();
+
+        User actor = userRepository.findByUsername(username).orElse(null);
+        saveActivity(job, JobActivityType.PART_USED, actor, job.getStatus(), job.getStatus(),
+                "Deleted part usage: " + part.getPartCode() + " x " + usage.getQuantityUsed());
         return toResponse(jobRepository.findById(jobId).orElseThrow());
     }
 
